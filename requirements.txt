@@ -1,0 +1,7 @@
+streamlit==1.67.0
+Pillow>=10.4,<13
+opencv-python-headless>=4.10,<5
+numpy>=1.26,<3
+imageio-ffmpeg>=0.5,<1
+
+fonttools>=4.50,<5

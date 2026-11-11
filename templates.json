@@ -1,0 +1,356 @@
+[
+  {
+    "id": "gold",
+    "names": {
+      "en": "Golden Christmas",
+      "ru": "Золотое Рождество",
+      "es": "Navidad dorada",
+      "fr": "Noël doré",
+      "de": "Goldene Weihnachten",
+      "it": "Natale dorato",
+      "pt": "Natal dourado",
+      "pl": "Złote Święta",
+      "tr": "Altın Noel",
+      "nl": "Gouden kerst"
+    },
+    "categories": [
+      "women",
+      "men",
+      "grandparents",
+      "couples",
+      "friends",
+      "business",
+      "universal"
+    ],
+    "background": "assets/gold.jpg",
+    "photo": [
+      160,
+      300,
+      760,
+      610
+    ],
+    "heading": [
+      130,
+      100,
+      820,
+      155
+    ],
+    "text": [
+      140,
+      1000,
+      800,
+      270
+    ],
+    "mat": "#142031",
+    "accent": "#f4dba4",
+    "ink": "#fff8ea"
+  },
+  {
+    "id": "winter",
+    "names": {
+      "en": "Winter Elegance",
+      "ru": "Зимняя элегантность",
+      "es": "Elegancia invernal",
+      "fr": "Élégance hivernale",
+      "de": "Winterliche Eleganz",
+      "it": "Eleganza invernale",
+      "pt": "Elegância de inverno",
+      "pl": "Zimowa elegancja",
+      "tr": "Kış zarafeti",
+      "nl": "Winterse elegantie"
+    },
+    "categories": [
+      "women",
+      "men",
+      "grandparents",
+      "friends",
+      "business",
+      "universal"
+    ],
+    "background": "assets/winter.jpg",
+    "photo": [
+      130,
+      310,
+      820,
+      600
+    ],
+    "heading": [
+      130,
+      100,
+      820,
+      155
+    ],
+    "text": [
+      140,
+      1000,
+      800,
+      270
+    ],
+    "mat": "#172d42",
+    "accent": "#d8edff",
+    "ink": "#f1f8ff"
+  },
+  {
+    "id": "ruby",
+    "names": {
+      "en": "Ruby Christmas",
+      "ru": "Рубиновое Рождество",
+      "es": "Navidad rubí",
+      "fr": "Noël rubis",
+      "de": "Rubinrote Weihnachten",
+      "it": "Natale rubino",
+      "pt": "Natal rubi",
+      "pl": "Rubinowe Święta",
+      "tr": "Yakut Noel",
+      "nl": "Robijnrode kerst"
+    },
+    "categories": [
+      "women",
+      "men",
+      "grandparents",
+      "couples",
+      "friends",
+      "universal"
+    ],
+    "background": "assets/ruby.jpg",
+    "photo": [
+      160,
+      300,
+      760,
+      610
+    ],
+    "heading": [
+      130,
+      100,
+      820,
+      155
+    ],
+    "text": [
+      140,
+      1000,
+      800,
+      270
+    ],
+    "mat": "#461c29",
+    "accent": "#f7dda7",
+    "ink": "#fff7e9"
+  },
+  {
+    "id": "forest",
+    "names": {
+      "en": "Christmas Fairy Tale",
+      "ru": "Рождественская сказка",
+      "es": "Cuento de Navidad",
+      "fr": "Conte de Noël",
+      "de": "Weihnachtsmärchen",
+      "it": "Fiaba di Natale",
+      "pt": "Conto de Natal",
+      "pl": "Świąteczna bajka",
+      "tr": "Noel masalı",
+      "nl": "Kerstsprookje"
+    },
+    "categories": [
+      "children",
+      "grandchildren",
+      "family",
+      "friends",
+      "universal"
+    ],
+    "background": "assets/forest.jpg",
+    "photo": [
+      130,
+      310,
+      820,
+      600
+    ],
+    "heading": [
+      130,
+      100,
+      820,
+      155
+    ],
+    "text": [
+      140,
+      1000,
+      800,
+      270
+    ],
+    "mat": "#132e29",
+    "accent": "#eed8aa",
+    "ink": "#fff8e9"
+  },
+  {
+    "id": "family",
+    "names": {
+      "en": "Family Christmas",
+      "ru": "Семейное Рождество",
+      "es": "Navidad en familia",
+      "fr": "Noël en famille",
+      "de": "Familienweihnachten",
+      "it": "Natale in famiglia",
+      "pt": "Natal em família",
+      "pl": "Rodzinne Święta",
+      "tr": "Aile Noeli",
+      "nl": "Familiekerst"
+    },
+    "categories": [
+      "family",
+      "grandparents",
+      "grandchildren",
+      "couples",
+      "friends",
+      "universal"
+    ],
+    "background": "assets/family.jpg",
+    "photo": [
+      125,
+      350,
+      830,
+      530
+    ],
+    "heading": [
+      130,
+      100,
+      820,
+      155
+    ],
+    "text": [
+      140,
+      1000,
+      800,
+      270
+    ],
+    "mat": "#f3eadc",
+    "accent": "#63452b",
+    "ink": "#3f3028"
+  },
+  {
+    "id": "candy",
+    "names": {
+      "en": "Candy Christmas",
+      "ru": "Сладкое Рождество",
+      "es": "Navidad dulce",
+      "fr": "Noël sucré",
+      "de": "Süße Weihnachten",
+      "it": "Dolce Natale",
+      "pt": "Natal doce",
+      "pl": "Słodkie Święta",
+      "tr": "Şekerli Noel",
+      "nl": "Zoete kerst"
+    },
+    "categories": [
+      "children",
+      "grandchildren",
+      "family",
+      "universal"
+    ],
+    "background": "assets/candy.jpg",
+    "photo": [
+      130,
+      310,
+      820,
+      600
+    ],
+    "heading": [
+      130,
+      100,
+      820,
+      155
+    ],
+    "text": [
+      140,
+      1000,
+      800,
+      270
+    ],
+    "mat": "#f9edf0",
+    "accent": "#894353",
+    "ink": "#542e40"
+  },
+  {
+    "id": "midnight",
+    "names": {
+      "en": "Midnight Magic",
+      "ru": "Волшебство полуночи",
+      "es": "Magia de medianoche",
+      "fr": "Magie de minuit",
+      "de": "Mitternachtszauber",
+      "it": "Magia di mezzanotte",
+      "pt": "Magia da meia-noite",
+      "pl": "Magia północy",
+      "tr": "Gece yarısı büyüsü",
+      "nl": "Middernachtmagie"
+    },
+    "categories": [
+      "men",
+      "women",
+      "couples",
+      "friends",
+      "business",
+      "universal"
+    ],
+    "background": "assets/midnight.jpg",
+    "photo": [
+      160,
+      300,
+      760,
+      610
+    ],
+    "heading": [
+      130,
+      100,
+      820,
+      155
+    ],
+    "text": [
+      140,
+      1000,
+      800,
+      270
+    ],
+    "mat": "#151b39",
+    "accent": "#eedca7",
+    "ink": "#f7f2e7"
+  },
+  {
+    "id": "pets",
+    "names": {
+      "en": "Christmas Pets",
+      "ru": "Рождество с питомцами",
+      "es": "Navidad con mascotas",
+      "fr": "Noël des animaux",
+      "de": "Weihnachten mit Haustieren",
+      "it": "Natale con animali",
+      "pt": "Natal com animais",
+      "pl": "Święta ze zwierzakami",
+      "tr": "Evcil hayvanlarla Noel",
+      "nl": "Kerst met huisdieren"
+    },
+    "categories": [
+      "pets",
+      "universal"
+    ],
+    "background": "assets/pets.jpg",
+    "photo": [
+      175,
+      300,
+      730,
+      620
+    ],
+    "heading": [
+      130,
+      100,
+      820,
+      155
+    ],
+    "text": [
+      140,
+      1000,
+      800,
+      270
+    ],
+    "mat": "#f5e9d9",
+    "accent": "#70452f",
+    "ink": "#473225"
+  }
+]
