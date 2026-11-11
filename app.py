@@ -53,7 +53,9 @@ def gallery_image(template_id, title, message, label):
     # Gallery is explicitly an empty photo slot, never a customer's image.
     from engine import font
     draw.text((400, 325), label, fill="#615d56", font=font(26), anchor="mm")
-    return encode_image(render(sample, template_id, title, message), "JPEG")
+    card = render(sample, template_id, title, message)
+    card.thumbnail((360, 450), Image.Resampling.LANCZOS)
+    return encode_image(card, "JPEG")
 
 
 with st.expander(t["all"], expanded=True):
@@ -128,7 +130,9 @@ try:
         st.error(t["unsupported"])
         st.stop()
     card = render(photo, selected, title, message, name, size, horizontal, vertical)
-    st.image(card, caption=t["preview"], width="stretch")
+    preview = card.copy()
+    preview.thumbnail((320, 400), Image.Resampling.LANCZOS)
+    st.image(preview, caption=t["preview"], width=320)
     if st.button(t["create"], type="primary"):
         with st.spinner(t["creating"]):
             result = {

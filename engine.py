@@ -152,11 +152,11 @@ def render(photo, theme, title, message, name="", size=100, horizontal=50, verti
     template = THEMES[theme]
     card = background(theme).copy()
     draw = ImageDraw.Draw(card)
-    x, y, width, height = template["photo"]
-    draw.rounded_rectangle((x-6, y-6, x+width+6, y+height+6),
-                           radius=6, fill=template["accent"])
-    draw.rectangle((x, y, x+width, y+height), fill=template["mat"])
     fitted, left, top = photo_placement(photo, theme, size, horizontal, vertical)
+    right = left + fitted.width - 1
+    bottom = top + fitted.height - 1
+    draw.rounded_rectangle((left-6, top-6, right+6, bottom+6),
+                           radius=6, fill=template["accent"])
     card.paste(fitted, (left, top))
     # Panels ensure readable, independent text on every artwork.
     for key in ("heading", "text"):
