@@ -67,9 +67,10 @@ def scene_input(photo, market=False):
     size = (1536, 1024) if ratio > 1.2 else (1024, 1536) if ratio < .83 else (1024, 1024)
     if market:
         size = (1536, 1024)
-    fitted = ImageOps.contain(photo, tuple(round(side * .82) for side in size), Image.Resampling.LANCZOS)
+    fitted = ImageOps.contain(photo, (round(size[0] * .82), round(size[1] * .68)),
+                              Image.Resampling.LANCZOS)
     canvas = Image.new("RGB", size, "#263229")
-    canvas.paste(fitted, ((size[0] - fitted.width) // 2, (size[1] - fitted.height) // 2))
+    canvas.paste(fitted, ((size[0] - fitted.width) // 2, round(size[1] * .05)))
     return canvas
 
 
@@ -149,7 +150,11 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                     "in the reference photo, seated at opposite sides of one wooden table with two mugs "
                     "at an evening Christmas market. Preserve their left-to-right order, facial structure, "
                     "age, expressions, glasses and hair. Both look toward camera with natural head angles. "
-                    "Complete heads, generous headroom, winter coats, natural proportions. No text or frames."
+                    "Complete heads, generous headroom, winter coats, natural proportions. "
+                    "Compose both people in the upper 72 percent of the image. Reserve the lower "
+                    "24 percent for a short greeting: an uncluttered softly lit wooden tabletop "
+                    "with no hands, faces, mugs, gifts or busy decorations in that lower text zone. "
+                    "The scene must continue naturally into that area. No text or frames."
                 )
                 edit_mask = None
             else:
@@ -168,7 +173,12 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                     "Transform the setting around these people into " + setting + ". "
                     "Use festive knits indoors and elegant warm coats outdoors. Preserve people, "
                     "poses, scale and positions. Keep protected faces, glasses, expressions and lighting. "
-                    "Leave the added space above and around people filled with the setting. No text."
+                    "Leave the added space above and around people filled with the setting. "
+                    "Reserve the lower 24 percent as a calm, uncluttered part of this same setting "
+                    "for a short greeting. Keep faces, hands, gifts, decorations and other focal "
+                    "objects out of that lower area. Use softly lit snow outdoors, or a softly "
+                    "lit rug or tabletop indoors, with low visual detail and even lighting. "
+                    "Do not draw a separate banner, frame, panel or text."
                 )
                 edit_mask = scene_editable(canvas.size, faces)
             result = edit_scene(canvas, edit_mask, prompt, api_key, reference=photo)
@@ -235,7 +245,8 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                                 caption=("Результат " if ru else "Result ") + str(index+1), width=180)
     st.caption("Проверьте сходство каждого человека перед скачиванием." if ru else
                "Please check each person's likeness before downloading.")
-    card = render_original(current, "gold", title, message, name, christmas=True)
+    card = render_original(current, "gold", title, message, name, christmas=True,
+                           greeting_reserved=True)
     preview = card.copy()
     preview.thumbnail((600, 440), Image.Resampling.LANCZOS)
     right.image(preview, caption=t["preview"])
@@ -276,7 +287,7 @@ h1 {font-family:Georgia,serif;letter-spacing:-1px;color:#173e33}
 .block-container{position:relative;z-index:1;max-width:min(1380px,calc(100% - 160px));padding-left:1.5rem;padding-right:1.5rem;background:rgba(255,250,243,.97);border-left:1px solid #dfcfac;border-right:1px solid #dfcfac}
 [class*="st-key-gallery_card_"]{background:#fffdf8;border:1px solid #ddcdb0!important;border-radius:18px!important;padding:14px!important;box-shadow:0 5px 20px rgba(35,61,43,.06);margin-bottom:16px}
 [class*="st-key-gallery_card_"] [data-testid="stImage"]{width:100%!important}
-[class*="st-key-gallery_card_"] [data-testid="stImage"] img{display:block;width:100%;height:auto;aspect-ratio:9/7;object-fit:contain;background:#faf3e7;border-radius:12px}
+[class*="st-key-gallery_card_"] [data-testid="stImage"] img{display:block;width:100%;height:auto;aspect-ratio:720/540;object-fit:contain;background:#faf3e7;border-radius:12px}
 [class*="st-key-gallery_card_"] [data-testid="stMarkdownContainer"]{min-height:3.2rem}
 [class*="st-key-gallery_card_"] [data-testid="stCaptionContainer"]{height:4.5rem;overflow:hidden;font-size:.85rem}
 [class*="st-key-gallery_card_"] [data-testid="stCaptionContainer"]:has(+*){line-height:1.5}
@@ -292,44 +303,69 @@ lang = st.selectbox("Язык сайта / Website language", list(L), format_fu
 t = L[lang]
 st.markdown('<section class="mg-hero"><h1>Magic Greetings</h1></section>', unsafe_allow_html=True)
 
-def render_original(photo, theme, title, message, name="", christmas=False):
-    # Reserve a separate greeting area so text never overlaps people.
-    width = max(640, photo.width)
-    photo_top = 0
-    card_photo = photo.convert("RGB")
+def render_original(photo, theme, title, message, name="", christmas=False, greeting_reserved=False):
+    # Keep every source pixel above a compact, scene-coloured greeting area.
+    source = photo.convert("RGB")
     caption = "\n".join(value for value in (name, message) if value.strip())
-    padding = max(28, round(width * .045))
-    title_height = max(100, round(width * .13)) if title.strip() else 0
-    caption_height = max(140, round(width * .19)) if caption else 0
-    footer = title_height + caption_height + 2 * padding if title_height or caption_height else 0
-    height = photo.height + footer
-    if width * height > 30_000_000:
+    if not title.strip() and not caption:
+        return source.copy()
+    width = source.width
+    padding = max(16, round(width * .035))
+    title_height = max(30, round(width * .06)) if title.strip() else 0
+    caption_height = max(34, round(width * .065)) if caption else 0
+    footer = title_height + caption_height + padding * 2
+    if width * (source.height + footer) > 30_000_000:
         raise PhotoError("pixels")
-    card = Image.new("RGB", (width, height), "#faf3e7")
-    card.paste(card_photo, ((width-photo.width)//2, photo_top))
-    y = photo.height + padding
+    if greeting_reserved:
+        # The generation prompt and input canvas reserve the lower quarter.
+        card = source.copy()
+        footer = min(footer, round(source.height * .24))
+        top = source.height - footer
+        backdrop = source.crop((0, top, width, source.height)).convert("RGBA")
+    else:
+        # Existing photographs keep all their pixels; use scene colours below them.
+        edge = source.crop((0, max(0, source.height - max(8, source.height // 8)),
+                            width, source.height))
+        backdrop = ImageOps.fit(edge, (width, footer), Image.Resampling.LANCZOS)
+        backdrop = backdrop.filter(ImageFilter.GaussianBlur(max(16, width * .045))).convert("RGBA")
+        card = Image.new("RGB", (width, source.height + footer))
+        card.paste(source, (0, 0))
+        top = source.height
+    panel = Image.new("RGBA", backdrop.size, (255, 248, 230, 38))
+    backdrop = Image.alpha_composite(backdrop, panel).convert("RGB")
+    card.paste(backdrop, (0, top))
+    luminance = float(np.asarray(backdrop).mean())
+    ink = "#173e33" if luminance > 150 else "#fff8e8"
+    # Adapt the two text boxes to the small reserved region.
+    available = footer - 2 * padding
+    if title.strip() and caption:
+        title_height = max(24, round(available * .48))
+        caption_height = available - title_height
+    elif title.strip():
+        title_height = available
+    else:
+        title_height = 0
+        caption_height = available
+    y = top + padding
     if title.strip():
-        text_block(card, title, (padding, y, width-2*padding, title_height),
-                   min(64, max(30, round(width*.047))), 15, "#21463a", True)
+        text_block(card, title, (padding, y, width - 2*padding, title_height),
+                   max(18, round(width * .044)), 12, ink, True)
     if caption:
-        text_block(card, caption, (padding, y+title_height, width-2*padding, caption_height),
-                   min(42, max(26, round(width*.031))), 15, "#34463b")
+        text_block(card, caption, (padding, y + title_height,
+                                  width - 2*padding, caption_height),
+                   max(15, round(width * .029)), 11, ink)
     return card
 
 
 @st.cache_data(show_spinner=False)
 def scene_example_card(encoded, russian):
-    # One uniform photo viewport: crop the surroundings, never distort anatomy.
     with Image.open(BytesIO(base64.b64decode(encoded))) as picture:
         photo = ImageOps.fit(picture.convert("RGB"), (720, 400),
                              Image.Resampling.LANCZOS, centering=(0.5, 0.4))
-    card = Image.new("RGB", (720, 560), "#faf3e7")
-    card.paste(photo, (0, 0))
-    text_block(card, "С Рождеством Христовым!" if russian else "Merry Christmas!",
-               (24, 416, 672, 52), 31, 15, "#21463a", True)
-    text_block(card, "Мир в доме, любовь и радость в сердце." if russian else
-               "Peace in your home, love and joy in your heart.",
-               (24, 477, 672, 57), 23, 15, "#34463b")
+    card = render_original(photo, "gold",
+                           "С Рождеством!" if russian else "Merry Christmas!",
+                           "Мир в доме, любовь и радость в сердце." if russian else
+                           "Peace in your home, love and joy in your heart.")
     return encode_image(card, "JPEG")
 
 
