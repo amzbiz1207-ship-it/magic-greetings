@@ -510,7 +510,6 @@ for row_start in range(0, len(visible_designs), 4):
                     st.image(scene_example_card(MARKET_EXAMPLE, ru), width="stretch")
                 elif design_id in SCENE_EXAMPLES:
                     st.image(scene_example_card(SCENE_EXAMPLES[design_id], ru), width="stretch")
-                    st.caption("Пример с вымышленными людьми" if ru else "Example with fictional people")
                 else:
                     st.image(frame_example("gold" if design_id == "frame_gold" else "winter"), width="stretch")
                 st.markdown("**" + design["title"] + "**")
