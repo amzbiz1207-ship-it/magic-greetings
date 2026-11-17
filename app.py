@@ -20,18 +20,31 @@ from engine import (
     encode_image, face_detector, inspect, load_photo, render, text_block, wrap,
 )
 
-def edit_scene(image, editable, prompt, api_key):
-    files = {"image": ("scene.png", encode_image(image, "PNG"), "image/png")}
+IDENTITY_RULES = (
+    "Identity is the primary requirement. Preserve each person's individual eye shape and spacing, "
+    "nose, lips, jawline, chin, facial proportions, natural asymmetry, age, skin tone and texture. "
+    "Preserve glasses, hairline, expression and gaze. No beautification, age reduction, face slimming, "
+    "eye enlargement, generic face substitution or exaggerated smoothing. Keep natural head-to-body "
+    "proportions. Preserve the source head orientation whenever possible. "
+)
+
+
+def edit_scene(image, editable, prompt, api_key, reference=None, face_reference=None):
+    files = [("image[]", ("scene.png", encode_image(image, "PNG"), "image/png"))]
+    if reference is not None:
+        files.append(("image[]", ("original-photo.png", encode_image(reference, "PNG"), "image/png")))
+    if face_reference is not None:
+        files.append(("image[]", ("original-face.png", encode_image(face_reference, "PNG"), "image/png")))
     if editable is not None:
         mask = Image.new("RGBA", image.size, (0, 0, 0, 255))
         mask.putalpha(ImageOps.invert(editable))
-        files["mask"] = ("edit-mask.png", encode_image(mask, "PNG"), "image/png")
+        files.append(("mask", ("edit-mask.png", encode_image(mask, "PNG"), "image/png")))
     response = requests.post(
         "https://api.openai.com/v1/images/edits",
         headers={"Authorization": f"Bearer {api_key}"},
         data={
             "model": os.environ.get("MAGIC_GREETING_IMAGE_MODEL", "gpt-image-2.6-sunburst"),
-            "prompt": prompt,
+            "prompt": IDENTITY_RULES + prompt,
             "size": f"{image.width}x{image.height}",
         },
         files=files,
@@ -88,7 +101,7 @@ def detect_scene_faces(image):
 def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
     ru = lang == "ru"
     market = scene == "market"
-    digest = f"{digest}_{scene}"
+    digest = f"{digest}_{scene}_identity_v2"
     if st.session_state.get("scene_digest") != digest:
         canvas = scene_input(photo, market)
         faces = detect_scene_faces(canvas)
@@ -96,7 +109,8 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
         saved = st.session_state.setdefault("scene_saved", {}).get(digest, {})
         st.session_state.update(scene_digest=digest, scene_source=canvas, scene_faces=faces,
                                 scene_issues=issues, scene_versions=saved.get("versions", []),
-                                scene_confirmed_faces=saved.get("faces", []))
+                                scene_confirmed_faces=saved.get("faces", []),
+                                scene_original_faces=saved.get("original_faces", []))
     canvas = st.session_state["scene_source"]
     faces = st.session_state["scene_faces"]
     versions = st.session_state["scene_versions"]
@@ -157,11 +171,13 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                     "Leave the added space above and around people filled with the setting. No text."
                 )
                 edit_mask = scene_editable(canvas.size, faces)
-            result = edit_scene(canvas, edit_mask, prompt, api_key)
+            result = edit_scene(canvas, edit_mask, prompt, api_key, reference=photo)
+        st.session_state["scene_original_faces"] = list(faces)
         st.session_state["scene_confirmed_faces"] = detect_scene_faces(result) if market else faces
         versions.append(result)
         st.session_state["scene_saved"][digest] = {
-            "versions": versions, "faces": st.session_state["scene_confirmed_faces"]
+            "versions": versions, "faces": st.session_state["scene_confirmed_faces"],
+            "original_faces": st.session_state["scene_original_faces"]
         }
         st.rerun()
     if not versions:
@@ -174,7 +190,8 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                            index=len(versions) - 1, format_func=lambda value: str(value + 1),
                            key=f"scene_version_{digest}_{len(versions)}")
     current = versions[version]
-    can_refine = len(faces) == 2 if market else bool(faces)
+    can_refine = (len(faces) == len(st.session_state["scene_original_faces"])
+                  and bool(faces))
     if can_refine and len(versions) < 4:
         with st.expander("Поправить одно лицо" if ru else "Refine one face"):
             choices = []
@@ -186,9 +203,18 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
             note = st.text_area("Что поправить?" if ru else "What should change?", max_chars=300)
             if st.button("Применить правку" if ru else "Apply refinement", disabled=not note.strip()):
                 with st.spinner(t["creating"]):
-                    versions.append(edit_scene(current, scene_editable(current.size, faces, choice),
-                        "Only refine the visible face within the supplied mask. Keep likeness, age, scale, "
-                        "and existing expressions and lighting. Requested adjustment: " + note, api_key))
+                    x, y, w, h = st.session_state["scene_original_faces"][choice]
+                    face_reference = canvas.crop((max(0, x-20), max(0, y-20),
+                                                  min(canvas.width, x+w+20),
+                                                  min(canvas.height, y+h+20)))
+                    versions.append(edit_scene(
+                        current, scene_editable(current.size, faces, choice),
+                        "Edit only the selected face in the FIRST image. The SECOND image is the "
+                        "original customer photo; the THIRD image isolates this person's original face. "
+                        "Use those originals as the identity reference. Preserve the first image's "
+                        "composition and other people. Restore the person's original facial features "
+                        "and expression. Apply this localized request only: " + note,
+                        api_key, reference=photo, face_reference=face_reference))
                 st.rerun()
     if can_refine:
         st.caption(f"Корректировок осталось: {4-len(versions)}" if ru else
@@ -196,6 +222,19 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
     else:
         st.caption("Локальная правка доступна, когда в результате найдены оба лица." if ru else
                    "Local refinements require both faces to be detected in the result.")
+    with st.expander("Сравнить лица крупно" if ru else "Compare faces close up"):
+        source_faces = st.session_state["scene_original_faces"]
+        for index, (source_box, result_box) in enumerate(zip(source_faces, faces)):
+            source_x, source_y, source_w, source_h = source_box
+            x, y, w, h = result_box
+            source_column, result_column = st.columns(2)
+            source_column.image(canvas.crop((source_x, source_y, source_x+source_w, source_y+source_h)),
+                                caption=("Исходное лицо " if ru else "Original face ") + str(index+1),
+                                width=180)
+            result_column.image(current.crop((x, y, x+w, y+h)),
+                                caption=("Результат " if ru else "Result ") + str(index+1), width=180)
+    st.caption("Проверьте сходство каждого человека перед скачиванием." if ru else
+               "Please check each person's likeness before downloading.")
     card = render_original(current, "gold", title, message, name, christmas=True)
     preview = card.copy()
     preview.thumbnail((600, 440), Image.Resampling.LANCZOS)
