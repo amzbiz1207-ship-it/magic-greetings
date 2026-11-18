@@ -645,6 +645,40 @@ background:#fff4dc!important;color:#39432d!important;border-color:#d9bd83!import
 .stApp [data-testid="stAlert"] svg{color:#8a642e!important}
 [class*="st-key-gallery_card_"] [data-testid="stButton"] [data-testid="stMarkdownContainer"]{min-height:0}
 
+
+/* Consistent, high-contrast green action buttons in every browser theme. */
+.stApp [data-testid="stButton"] button,
+.stApp [data-testid="stFormSubmitButton"] button,
+.stApp [data-testid="stDownloadButton"] button,
+.stApp [data-testid="stFileUploaderDropzone"] button,
+.stApp button[kind="primary"],
+.stApp button[kind="secondary"],
+.stApp [data-testid^="stBaseButton"]{
+background:#24543e!important;border:1px solid #24543e!important;
+color:#ffffff!important;-webkit-text-fill-color:#ffffff!important;border-radius:10px!important}
+.stApp [data-testid="stButton"] button *,
+.stApp [data-testid="stFormSubmitButton"] button *,
+.stApp [data-testid="stDownloadButton"] button *,
+.stApp [data-testid="stFileUploaderDropzone"] button *,
+.stApp button[kind="primary"] *,
+.stApp button[kind="secondary"] *,
+.stApp [data-testid^="stBaseButton"] *{
+color:#ffffff!important;-webkit-text-fill-color:#ffffff!important}
+.stApp [data-testid="stButton"] button:hover,
+.stApp [data-testid="stFormSubmitButton"] button:hover,
+.stApp [data-testid="stDownloadButton"] button:hover,
+.stApp [data-testid="stFileUploaderDropzone"] button:hover,
+.stApp button[kind="primary"]:hover,.stApp button[kind="secondary"]:hover{
+background:#193e2d!important;border-color:#193e2d!important;color:#ffffff!important}
+.stApp [data-testid="stButton"] button:focus-visible,
+.stApp [data-testid="stFormSubmitButton"] button:focus-visible,
+.stApp [data-testid="stDownloadButton"] button:focus-visible{
+outline:3px solid #c9ad72!important;outline-offset:3px}
+.stApp [data-testid="stButton"] button:disabled,
+.stApp [data-testid="stFormSubmitButton"] button:disabled,
+.stApp [data-testid="stDownloadButton"] button:disabled{
+background:#61796b!important;border-color:#61796b!important;color:#ffffff!important;opacity:1}
+
 </style>
 """, unsafe_allow_html=True)
 lang = st.selectbox("Язык сайта / Website language", list(L), format_func=lambda value: L[value]["language_name"], key="ui_language")
