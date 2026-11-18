@@ -297,6 +297,24 @@ h1 {font-family:Georgia,serif;letter-spacing:-1px;color:#173e33}
 .stApp [data-testid="stHeader"]{background:#f8efdf}
 @media(max-width:900px){.stApp::before,.stApp::after{width:34px;background-size:34px 180px;opacity:.65}.block-container{max-width:calc(100% - 70px);padding-left:1rem;padding-right:1rem}}
 @media(max-width:600px){.stApp::before,.stApp::after{width:17px;background-size:25px 160px;opacity:.4}.block-container{max-width:calc(100% - 34px);padding-left:.75rem;padding-right:.75rem}[class*="st-key-gallery_card_"]{padding:9px!important}}
+
+/* Explicit colours also cover browsers using Streamlit's dark theme. */
+.stApp [data-testid="stBaseButton-secondary"],
+.stApp [data-testid="stBaseButton-secondary"] p,
+.stApp [data-testid="stBaseButton-secondary"] span,
+.stApp button[kind="secondary"],.stApp button[kind="secondary"] p{
+background:#fffdf8!important;color:#263d32!important;border-color:#b89d70!important}
+.stApp [data-testid="stBaseButton-primary"],
+.stApp button[kind="primary"]{background:#773044!important;color:#fffdf8!important}
+.stApp [data-testid="stBaseButton-primary"] p,
+.stApp button[kind="primary"] p{color:#fffdf8!important}
+.stApp input,.stApp textarea{background:#fffdf8!important;color:#263d32!important;-webkit-text-fill-color:#263d32!important}
+.stApp [data-testid="stFileUploaderDropzone"]{background:#fffdf8!important;border:2px dashed #af945e!important;border-radius:14px!important;padding:1.5rem}
+.stApp [data-testid="stFileUploaderDropzone"] *{color:#263d32!important}
+.stApp [data-testid="stExpander"] summary{background:#f1e7d3!important;color:#214638!important;border:1px solid #c5ad80;border-radius:10px;padding:.8rem}
+.stApp [data-testid="stExpander"] summary p{color:#214638!important;font-weight:600}
+.stApp [data-testid="stRadio"] [role="radiogroup"]{flex-wrap:wrap;gap:12px}
+
 </style>
 """, unsafe_allow_html=True)
 lang = st.selectbox("Язык сайта / Website language", list(L), format_func=lambda value: L[value]["language_name"], key="ui_language")
@@ -419,7 +437,7 @@ def frame_example(theme):
 
 
 ru = lang == "ru"
-st.subheader("Выберите сцену или рамку" if ru else "Choose a scene or frame")
+st.subheader("1. Выберите сцену или рамку" if ru else "1. Choose a scene or frame")
 st.caption("Нажмите «Выбрать» под картинкой. Затем загрузите фото и добавьте пожелание."
            if ru else "Choose a picture below, then upload your photo and add your message.")
 api_key = runtime_setting("OPENAI_API_KEY")
@@ -481,44 +499,49 @@ designs = {
                        if ru else "Your photo in a winter frame with a greeting.",
     },
 }
-audiences = {
-    "all": "Все примеры" if ru else "All examples",
-    "one": "Для одного" if ru else "One person",
-    "two": "Для двоих" if ru else "Two people",
-    "family": "Для семьи" if ru else "Family",
-}
-audience = st.radio("Показать примеры" if ru else "Show examples", list(audiences),
-                    format_func=audiences.__getitem__, horizontal=True, key="example_audience")
-example_people = {
-    "ornament": "two", "market": "two", "forest": "two", "morning": "two",
-    "city": "one", "snow": "one", "lantern": "one", "fireworks": "one", "panorama": "one",
-    "fireplace": "family",
-}
-st.caption("Фильтр показывает состав людей в образцах. Сцены, кроме ярмарки для двоих, "
-           "принимают фото с 1–5 людьми." if ru else
-           "The filter shows people in the examples. Scenes support 1–5 people, except the market for two.")
 chosen = st.session_state.get("chosen_design")
-st.caption("На всех образцах — вымышленные люди." if ru else "All examples feature fictional people.")
-visible_designs = [(key, value) for key, value in designs.items()
-                   if audience == "all" or key.startswith("frame_") or example_people[key] == audience]
-for row_start in range(0, len(visible_designs), 4):
-    columns = st.columns(4, gap="medium")
-    for column, (design_id, design) in zip(columns, visible_designs[row_start:row_start + 4]):
-        with column:
-            with st.container(border=True, key="gallery_card_" + design_id):
-                if design_id == "market":
-                    st.image(scene_example_card(MARKET_EXAMPLE, ru), width="stretch")
-                elif design_id in SCENE_EXAMPLES:
-                    st.image(scene_example_card(SCENE_EXAMPLES[design_id], ru), width="stretch")
-                else:
-                    st.image(frame_example("gold" if design_id == "frame_gold" else "winter"), width="stretch")
-                st.markdown("**" + design["title"] + "**")
-                st.caption(design["description"])
-                if st.button(("✓ Выбрано" if ru else "✓ Selected") if chosen == design_id else
-                             ("Выбрать" if ru else "Choose"), key="choose_" + design_id,
-                             type="primary" if chosen == design_id else "secondary"):
-                    st.session_state["chosen_design"] = design_id
-                    st.rerun()
+with st.expander("Открыть каталог — выбрать или сменить сцену" if ru else
+                 "Open catalogue — choose or change a scene", expanded=chosen not in designs):
+    audiences = {
+        "all": "Все примеры" if ru else "All examples",
+        "one": "Для одного" if ru else "One person",
+        "two": "Для двоих" if ru else "Two people",
+        "family": "Для семьи" if ru else "Family",
+    }
+    audience = st.radio("Показать примеры" if ru else "Show examples", list(audiences),
+                        format_func=audiences.__getitem__, horizontal=True, key="example_audience")
+    example_people = {
+        "ornament": "two", "market": "two", "forest": "two", "morning": "two",
+        "city": "one", "snow": "one", "lantern": "one", "fireworks": "one", "panorama": "one",
+        "fireplace": "family",
+    }
+    st.caption("Фильтр показывает состав людей в образцах. Сцены, кроме ярмарки для двоих, "
+               "принимают фото с 1–5 людьми." if ru else
+               "The filter shows people in the examples. Scenes support 1–5 people, except the market for two.")
+    chosen = st.session_state.get("chosen_design")
+    st.caption("На всех образцах — вымышленные люди." if ru else "All examples feature fictional people.")
+    visible_designs = [(key, value) for key, value in designs.items()
+                       if audience == "all" or key.startswith("frame_") or example_people[key] == audience]
+    for row_start in range(0, len(visible_designs), 4):
+        columns = st.columns(4, gap="medium")
+        for column, (design_id, design) in zip(columns, visible_designs[row_start:row_start + 4]):
+            with column:
+                with st.container(border=True, key="gallery_card_" + design_id):
+                    if design_id == "market":
+                        st.image(scene_example_card(MARKET_EXAMPLE, ru), width="stretch")
+                    elif design_id in SCENE_EXAMPLES:
+                        st.image(scene_example_card(SCENE_EXAMPLES[design_id], ru), width="stretch")
+                    else:
+                        st.image(frame_example("gold" if design_id == "frame_gold" else "winter"), width="stretch")
+                    st.markdown("**" + design["title"] + "**")
+                    st.caption(design["description"])
+                    if st.button(("✓ Выбрано" if ru else "✓ Selected") if chosen == design_id else
+                                 (("Выбрать эту рамку" if design_id.startswith("frame_") else "Выбрать эту сцену") if ru else
+                                  ("Choose this frame" if design_id.startswith("frame_") else "Choose this scene")),
+                                 key="choose_" + design_id,
+                                 type="primary" if chosen == design_id else "secondary"):
+                        st.session_state["chosen_design"] = design_id
+                        st.rerun()
 if chosen not in designs:
     st.info("Сначала выберите картинку выше." if ru else "First choose a picture above.")
     st.stop()
@@ -530,25 +553,35 @@ original = scene_mode
 selected = "winter" if chosen == "frame_winter" else "gold"
 category = "all"
 card_format = "static"
-if scene_mode:
-    if not api_key or not preview_password:
-        st.info("Генерация сцен пока недоступна. Попробуйте рамку." if ru else
-                "Scene generation is currently unavailable. Please try a frame.")
-        st.stop()
-    supplied = st.text_input("Пароль тестового доступа" if ru else "Test access password",
-                             type="password", key="scene_access")
-    if not hmac.compare_digest(supplied.encode(), preview_password.encode()):
-        st.info("Введите пароль для проверки сцены." if ru else "Enter the password to test a scene.")
-        st.stop()
-    st.caption("Для сцены фотография передаётся на обработку. Все лица должны быть хорошо видны."
-               if ru else "Your photo is sent for scene generation. All faces must be clearly visible.")
-st.subheader("Загрузите фото" if ru else "Upload your photo")
+scene_available = bool(api_key and preview_password)
+scene_authorized = not scene_mode
+st.subheader("2. Загрузите фотографию" if ru else "2. Upload your photo")
+st.caption("Нажмите «Выбрать файл» в светлом блоке ниже. Форматы JPG, PNG или WEBP, до 15 МБ."
+           if ru else "Click Browse files in the light box below. JPG, PNG or WEBP, up to 15 MB.")
 revision = st.session_state.get("upload_revision", 0)
-uploaded = st.file_uploader(t["upload"], type=["jpg", "jpeg", "png", "webp"],
+uploaded = st.file_uploader("Ваша фотография" if ru else "Your photo",
+                            type=["jpg", "jpeg", "png", "webp"],
                             key=f"upload_{revision}", max_upload_size=15)
+if scene_mode:
+    st.caption("Загрузка и текст доступны сразу. Тестовый пароль нужен только для запуска генерации."
+               if ru else "You can upload and edit your message now. The test password is needed only to generate.")
+    if scene_available:
+        supplied = st.text_input("Пароль для пробной генерации" if ru else "Password for trial generation",
+                                 type="password", key="scene_access",
+                                 help="Введите тестовый пароль и нажмите Enter." if ru else
+                                      "Enter the test password and press Enter.")
+        scene_authorized = hmac.compare_digest(supplied.encode(), preview_password.encode())
+        if scene_authorized:
+            st.success("Тестовый доступ открыт." if ru else "Trial access unlocked.")
+        else:
+            st.info("Можно загрузить фото и заполнить поздравление. Перед генерацией введите тестовый пароль."
+                    if ru else "Upload your photo and write your greeting. Enter the test password before generating.")
+    else:
+        st.warning("Генерация сцен временно недоступна. Фото и текст можно подготовить, либо выбрать рамку."
+                   if ru else "Scene generation is temporarily unavailable. Prepare your photo and text, or choose a frame.")
 if not original:
     st.caption(t["hint"])
-st.subheader("Поздравление на открытке" if ru else "Your greeting on the card")
+st.subheader("3. Добавьте поздравление" if ru else "3. Add your greeting")
 gl = st.selectbox(t["greeting_language"], list(L),
                   format_func=lambda value: L[value]["language_name"], key="content_language")
 g = L[gl]
@@ -613,6 +646,12 @@ try:
         st.error(t["unsupported"])
         st.stop()
     if scene_mode:
+        if not scene_available or not scene_authorized:
+            st.warning("Фото загружено. Для создания сцены введите тестовый пароль выше."
+                       if ru else "Your photo is uploaded. Enter the test password above to create the scene.")
+            st.button("Создать праздничную сцену" if ru else "Create festive scene",
+                      disabled=True, type="primary", key="scene_locked")
+            st.stop()
         scene_editor(photo, digest, scene, lang, title, message, name, api_key, t)
         st.stop()
     if original:
