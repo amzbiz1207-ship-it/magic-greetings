@@ -1,6 +1,7 @@
 import base64
 from io import BytesIO
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 import os
 import logging
 
@@ -30,7 +31,7 @@ IDENTITY_RULES = (
 )
 
 
-def edit_scene(image, editable, prompt, api_key, reference=None, face_reference=None):
+def _request_scene(image, editable, prompt, api_key, reference=None, face_reference=None):
     files = [("image[]", ("scene.png", encode_image(image, "PNG"), "image/png"))]
     if reference is not None:
         files.append(("image[]", ("original-photo.png", encode_image(reference, "PNG"), "image/png")))
@@ -63,13 +64,50 @@ def edit_scene(image, editable, prompt, api_key, reference=None, face_reference=
         return Image.composite(edited, image, editable)
 
 
+@st.cache_resource
+def scene_request_pool():
+    return ThreadPoolExecutor(max_workers=2, thread_name_prefix="magic-image")
+
+
+def edit_scene(image, editable, prompt, api_key, reference=None, face_reference=None):
+    # Limit the entire wait and retain jobs so retries do not duplicate API calls.
+    fingerprint = hashlib.sha256(prompt.encode())
+    for source in (image, editable, reference, face_reference):
+        if source is not None:
+            fingerprint.update(str((source.mode, source.size)).encode())
+            fingerprint.update(source.tobytes())
+    signature = fingerprint.hexdigest()
+    pending = st.session_state.get("scene_pending_request")
+    if pending and pending["signature"] != signature:
+        if not pending["future"].done():
+            raise requests.Timeout("Previous image request is still running")
+        st.session_state.pop("scene_pending_request", None)
+        pending = None
+    if pending is None:
+        future = scene_request_pool().submit(
+            _request_scene, image.copy(), editable.copy() if editable is not None else None,
+            prompt, api_key, reference.copy() if reference is not None else None,
+            face_reference.copy() if face_reference is not None else None)
+        pending = {"signature": signature, "future": future}
+        st.session_state["scene_pending_request"] = pending
+    try:
+        result = pending["future"].result(timeout=240)
+    except FutureTimeout as error:
+        raise requests.Timeout("Image request exceeded the UI wait limit") from error
+    except Exception:
+        st.session_state.pop("scene_pending_request", None)
+        raise
+    st.session_state.pop("scene_pending_request", None)
+    return result
+
+
 @contextmanager
 def generation_status(russian):
     label = "Создаём вашу открытку…" if russian else "Creating your card…"
     with st.status(label, expanded=True) as status:
-        st.write("Генерация может занять несколько минут. Ожидание ответа сервиса ограничено примерно 4 минутами."
+        st.write("Генерация может занять несколько минут. Общее ожидание ограничено 4 минутами."
                  if russian else
-                 "Generation can take a few minutes. The service response wait is limited to about 4 minutes.")
+                 "Generation can take a few minutes. The total wait is limited to 4 minutes.")
         st.caption("Не закрывайте и не обновляйте вкладку. Повторно нажимать кнопку не нужно. "
                    "Ниже отображается время ожидания; при ошибке появится сообщение."
                    if russian else
@@ -719,11 +757,13 @@ except PhotoError as error:
     st.error(t["errors"].get(str(error), "Не удалось подготовить открытку." if lang == "ru"
                                 else "Could not prepare the card."))
 except requests.Timeout:
-    st.error("Сервис изображений не ответил вовремя. Генерация не завершилась; ваше фото и текст "
-             "остались на странице. Подождите немного и попробуйте ещё раз."
+    st.error("Результат пока не получен. Фото и текст остались на странице. "
+             "Запрос мог продолжить обработку у сервиса. Не обновляйте вкладку: подождите немного "
+             "и нажмите кнопку создания ещё раз — сайт проверит тот же запрос без повторной отправки."
              if lang == "ru" else
-             "The image service did not respond in time. Generation did not finish; your photo and "
-             "message are still on this page. Wait a little, then try again.")
+             "The result has not arrived yet. Your photo and message are still on this page. "
+             "The service may still be processing the request. Do not refresh: wait a little and "
+             "click the create button again to check the same request without submitting it twice.")
 except (requests.RequestException, KeyError, IndexError, ValueError) as error:
     if scene_mode:
         response = getattr(error, "response", None)
