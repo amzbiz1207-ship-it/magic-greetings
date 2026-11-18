@@ -896,16 +896,29 @@ if scene_mode:
     st.caption("Загрузка и текст доступны сразу. Тестовый пароль нужен только для запуска генерации."
                if ru else "You can upload and edit your message now. The test password is needed only to generate.")
     if scene_available:
-        supplied = st.text_input("Пароль для пробной генерации" if ru else "Password for trial generation",
-                                 type="password", key="scene_access",
-                                 help="Введите тестовый пароль и нажмите Enter." if ru else
-                                      "Enter the test password and press Enter.")
+        with st.form("trial_access_form", clear_on_submit=False):
+            supplied = st.text_input("Пароль для пробной генерации" if ru else
+                                     "Password for trial generation",
+                                     type="password", key="scene_access",
+                                     help="Введите пароль и нажмите кнопку подтверждения ниже." if ru else
+                                          "Enter your password and click the confirmation button below.")
+            unlock = st.form_submit_button("Подтвердить пароль" if ru else "Confirm password")
         scene_authorized = hmac.compare_digest(supplied.encode(), preview_password.encode())
         if scene_authorized:
-            st.success("Тестовый доступ открыт." if ru else "Trial access unlocked.")
+            st.success("Тестовый доступ открыт. Теперь можно создать открытку." if ru else
+                       "Trial access unlocked. You can now create your card.")
+        elif unlock and supplied:
+            st.error("Пароль не подошёл. Проверьте язык клавиатуры и пробелы при копировании. "
+                     "Это тестовый пароль сайта, не пароль от OpenAI."
+                     if ru else
+                     "The password was not accepted. Check your keyboard language and any copied spaces. "
+                     "Use the site's trial password, not your OpenAI password.")
+        elif unlock:
+            st.info("Поле пароля пустое. Введите тестовый пароль выше." if ru else
+                    "The password field is empty. Enter the trial password above.")
         else:
-            st.info("Можно загрузить фото и заполнить поздравление. Перед генерацией введите тестовый пароль."
-                    if ru else "Upload your photo and write your greeting. Enter the test password before generating.")
+            st.info("После ввода пароля нажмите «Подтвердить пароль». Фото и поздравление сохранятся."
+                    if ru else "After entering the password, click Confirm password. Your photo and message will stay here.")
     else:
         st.warning("Генерация сцен временно недоступна. Фото и текст можно подготовить, либо выбрать рамку."
                    if ru else "Scene generation is temporarily unavailable. Prepare your photo and text, or choose a frame.")
@@ -982,8 +995,9 @@ try:
         if not scene_available or not scene_authorized:
             st.warning("Фото загружено. Для создания сцены введите тестовый пароль выше."
                        if ru else "Your photo is uploaded. Enter the test password above to create the scene.")
-            st.button(t["create"],
-                      disabled=True, type="primary", key="scene_locked")
+            if st.button(t["create"], type="primary", key="scene_locked"):
+                st.error("Доступ ещё не подтверждён. Нажмите «Подтвердить пароль» в разделе загрузки фото."
+                         if ru else "Access is not confirmed yet. Click Confirm password in the upload section.")
             st.stop()
         scene_editor(photo, digest, scene, lang, title, message, name, api_key, t)
         st.stop()
