@@ -142,7 +142,7 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
         faces = selected_faces
     else:
         faces = st.session_state["scene_confirmed_faces"]
-    if not versions and st.button("Создать открытку" if ru else "Create card", type="primary"):
+    if not versions and st.button(t["create"], type="primary"):
         with st.spinner(t["creating"]):
             if market:
                 prompt = (
@@ -606,7 +606,10 @@ if not original:
         horizontal = st.slider(t["horizontal"], 0, 100, 50, key="horizontal")
         vertical = st.slider(t["vertical"], 0, 100, 50, key="vertical")
 
-if st.button(t["reset"]):
+if uploaded and st.button(t["reset"],
+                          help="Удалить текущее фото и результат, чтобы загрузить другое фото." if ru else
+                               "Remove the current photo and result to upload a different photo."):
+
     for key in list(st.session_state):
         if key.startswith(("upload_", "photo_", "result", "check_", "scene_")) or key in {
             "recipient", "size", "horizontal", "vertical"
@@ -649,7 +652,7 @@ try:
         if not scene_available or not scene_authorized:
             st.warning("Фото загружено. Для создания сцены введите тестовый пароль выше."
                        if ru else "Your photo is uploaded. Enter the test password above to create the scene.")
-            st.button("Создать праздничную сцену" if ru else "Create festive scene",
+            st.button(t["create"],
                       disabled=True, type="primary", key="scene_locked")
             st.stop()
         scene_editor(photo, digest, scene, lang, title, message, name, api_key, t)
