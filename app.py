@@ -1,5 +1,6 @@
 import base64
 from io import BytesIO
+from contextlib import contextmanager
 import os
 import logging
 
@@ -60,6 +61,31 @@ def edit_scene(image, editable, prompt, api_key, reference=None, face_reference=
             return edited
         # Keep protected pixels from the original even if the provider altered them.
         return Image.composite(edited, image, editable)
+
+
+@contextmanager
+def generation_status(russian):
+    label = "Создаём вашу открытку…" if russian else "Creating your card…"
+    with st.status(label, expanded=True) as status:
+        st.write("Генерация может занять несколько минут. Ожидание ответа сервиса ограничено примерно 4 минутами."
+                 if russian else
+                 "Generation can take a few minutes. The service response wait is limited to about 4 minutes.")
+        st.caption("Не закрывайте и не обновляйте вкладку. Повторно нажимать кнопку не нужно. "
+                   "Ниже отображается время ожидания; при ошибке появится сообщение."
+                   if russian else
+                   "Keep this tab open without refreshing. You do not need to click again. "
+                   "Elapsed time is shown below; an error message will appear if the request fails.")
+        try:
+            with st.spinner("Ожидаем изображение от сервиса…" if russian else
+                            "Waiting for the image service…", show_time=True):
+                yield
+        except Exception:
+            status.update(label="Создание не завершилось — см. сообщение ниже." if russian else
+                          "Creation did not finish — see the message below.", state="error", expanded=True)
+            raise
+        else:
+            status.update(label="Изображение получено. Готовим открытку." if russian else
+                          "Image received. Preparing your card.", state="complete", expanded=False)
 
 
 def scene_input(photo, market=False):
@@ -143,7 +169,7 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
     else:
         faces = st.session_state["scene_confirmed_faces"]
     if not versions and st.button(t["create"], type="primary"):
-        with st.spinner(t["creating"]):
+        with generation_status(ru):
             if market:
                 prompt = (
                     "Create a realistic wide holiday photograph of exactly the two foreground adults "
@@ -212,7 +238,7 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                                   format_func=lambda value: str(value + 1))
             note = st.text_area("Что поправить?" if ru else "What should change?", max_chars=300)
             if st.button("Применить правку" if ru else "Apply refinement", disabled=not note.strip()):
-                with st.spinner(t["creating"]):
+                with generation_status(ru):
                     x, y, w, h = st.session_state["scene_original_faces"][choice]
                     face_reference = canvas.crop((max(0, x-20), max(0, y-20),
                                                   min(canvas.width, x+w+20),
@@ -692,6 +718,12 @@ try:
 except PhotoError as error:
     st.error(t["errors"].get(str(error), "Не удалось подготовить открытку." if lang == "ru"
                                 else "Could not prepare the card."))
+except requests.Timeout:
+    st.error("Сервис изображений не ответил вовремя. Генерация не завершилась; ваше фото и текст "
+             "остались на странице. Подождите немного и попробуйте ещё раз."
+             if lang == "ru" else
+             "The image service did not respond in time. Generation did not finish; your photo and "
+             "message are still on this page. Wait a little, then try again.")
 except (requests.RequestException, KeyError, IndexError, ValueError) as error:
     if scene_mode:
         response = getattr(error, "response", None)
