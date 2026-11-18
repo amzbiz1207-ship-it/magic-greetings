@@ -556,8 +556,8 @@ card_format = "static"
 scene_available = bool(api_key and preview_password)
 scene_authorized = not scene_mode
 st.subheader("2. Загрузите фотографию" if ru else "2. Upload your photo")
-st.caption("Нажмите «Выбрать файл» в светлом блоке ниже. Форматы JPG, PNG или WEBP, до 15 МБ."
-           if ru else "Click Browse files in the light box below. JPG, PNG or WEBP, up to 15 MB.")
+st.caption("Нажмите «Upload» («Загрузить») в светлом блоке ниже. Форматы JPG, PNG или WEBP, до 15 МБ."
+           if ru else "Click Upload in the light box below. JPG, PNG or WEBP, up to 15 MB.")
 revision = st.session_state.get("upload_revision", 0)
 uploaded = st.file_uploader("Ваша фотография" if ru else "Your photo",
                             type=["jpg", "jpeg", "png", "webp"],
