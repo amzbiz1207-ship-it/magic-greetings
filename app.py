@@ -18,7 +18,7 @@ from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 # Keep rendering helpers in this script so live reload cannot invalidate an engine import.
-"""Image composition uses only the uploaded pixels, Pillow and FFmpeg."""
+# Local image composition helpers.
 from functools import lru_cache
 from pathlib import Path
 import io
