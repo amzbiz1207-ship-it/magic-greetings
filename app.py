@@ -613,15 +613,6 @@ h1 {font-family:Georgia,serif;letter-spacing:-1px;color:#173e33}
 @media(max-width:600px){.stApp::before,.stApp::after{width:17px;background-size:25px 160px;opacity:.4}.block-container{max-width:calc(100% - 34px);padding-left:.75rem;padding-right:.75rem}[class*="st-key-gallery_card_"]{padding:9px!important}}
 
 /* Explicit colours also cover browsers using Streamlit's dark theme. */
-.stApp [data-testid="stBaseButton-secondary"],
-.stApp [data-testid="stBaseButton-secondary"] p,
-.stApp [data-testid="stBaseButton-secondary"] span,
-.stApp button[kind="secondary"],.stApp button[kind="secondary"] p{
-background:#fffdf8!important;color:#263d32!important;border-color:#b89d70!important}
-.stApp [data-testid="stBaseButton-primary"],
-.stApp button[kind="primary"]{background:#773044!important;color:#fffdf8!important}
-.stApp [data-testid="stBaseButton-primary"] p,
-.stApp button[kind="primary"] p{color:#fffdf8!important}
 .stApp input,.stApp textarea{background:#fffdf8!important;color:#263d32!important;-webkit-text-fill-color:#263d32!important}
 .stApp [data-testid="stFileUploaderDropzone"]{background:#fffdf8!important;border:2px dashed #af945e!important;border-radius:14px!important;padding:1.5rem}
 .stApp [data-testid="stFileUploaderDropzone"] *{color:#263d32!important}
@@ -678,6 +669,25 @@ outline:3px solid #c9ad72!important;outline-offset:3px}
 .stApp [data-testid="stFormSubmitButton"] button:disabled,
 .stApp [data-testid="stDownloadButton"] button:disabled{
 background:#61796b!important;border-color:#61796b!important;color:#ffffff!important;opacity:1}
+
+
+/* Keep text containers transparent; old theme rules must not paint over labels. */
+.stApp [data-testid="stButton"] button,
+.stApp [data-testid="stFormSubmitButton"] button,
+.stApp [data-testid="stDownloadButton"] button,
+.stApp [data-testid="stFileUploaderDropzone"] button,
+.stApp button[data-testid^="stBaseButton"]{
+background-color:#24543e!important;background-image:none!important;
+color:#ffffff!important;-webkit-text-fill-color:#ffffff!important;
+border:1px solid #24543e!important;min-height:44px;opacity:1!important}
+.stApp [data-testid="stButton"] button *,
+.stApp [data-testid="stFormSubmitButton"] button *,
+.stApp [data-testid="stDownloadButton"] button *,
+.stApp [data-testid="stFileUploaderDropzone"] button *,
+.stApp button[data-testid^="stBaseButton"] *{
+background:transparent!important;background-color:transparent!important;
+color:#ffffff!important;-webkit-text-fill-color:#ffffff!important;
+opacity:1!important;visibility:visible!important}
 
 </style>
 """, unsafe_allow_html=True)
