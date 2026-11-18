@@ -180,10 +180,34 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
     faces = st.session_state["scene_faces"]
     versions = st.session_state["scene_versions"]
     if st.session_state["scene_issues"] or not faces:
-        for issue in st.session_state["scene_issues"]:
-            st.warning(t["errors"][issue])
-        st.warning("Выберите чёткое фото с 1–5 хорошо видимыми лицами." if ru else
-                   "Choose a clear photo with one to five visible faces.")
+        issues = set(st.session_state["scene_issues"])
+        reasons = []
+        if issues & {"blur", "face_blur"}:
+            reasons.append("снимок или лицо недостаточно резкие" if ru else
+                           "the photo or a face is not sharp enough")
+        if "resolution" in issues:
+            reasons.append("слишком маленький размер снимка" if ru else
+                           "the image resolution is too low")
+        if "light" in issues:
+            reasons.append("снимок слишком тёмный или пересвечен" if ru else
+                           "the photo is too dark or overexposed")
+        if "face_missing" in issues or not faces:
+            reasons.append("не удалось уверенно найти лица" if ru else
+                           "faces could not be detected reliably")
+        if "face_small" in issues:
+            reasons.append("лица слишком мелкие на снимке" if ru else
+                           "faces are too small in the photo")
+        if "face_count" in issues:
+            reasons.append("проверьте количество людей на снимке" if ru else
+                           "check the number of people in the photo")
+        details = "; ".join(reasons) or ("проверьте качество фото" if ru else "check the photo quality")
+        st.warning(("**Генерация ещё не началась.** Нужно заменить фото: " + details +
+                    ". Загрузите более чёткий оригинал в блоке «2. Загрузите фотографию» выше. "
+                    "За этот шаг запрос на генерацию не отправлялся.")
+                   if ru else
+                   ("**Generation has not started.** Please replace this photo: " + details +
+                    ". Upload a clearer original in section 2 above. "
+                    "No generation request was sent at this step."))
         return
     if not versions:
         st.markdown("**Проверьте найденные лица**" if ru else "**Check detected faces**")
@@ -378,6 +402,22 @@ background:#fffdf8!important;color:#263d32!important;border-color:#b89d70!import
 .stApp [data-testid="stExpander"] summary{background:#f1e7d3!important;color:#214638!important;border:1px solid #c5ad80;border-radius:10px;padding:.8rem}
 .stApp [data-testid="stExpander"] summary p{color:#214638!important;font-weight:600}
 .stApp [data-testid="stRadio"] [role="radiogroup"]{flex-wrap:wrap;gap:12px}
+
+
+/* Notices must remain readable even when the browser selects a dark theme. */
+.stApp [data-testid="stAlert"],
+.stApp [data-testid="stAlertContainer"],
+.stApp [data-testid="stAlert"] [role="alert"],
+.stApp [data-testid="stAlert"] [data-baseweb="notification"]{
+background:#fff4dc!important;color:#39432d!important;border-color:#d9bd83!important;border-radius:12px!important}
+.stApp [data-testid="stAlert"]{border:1px solid #d9bd83!important;box-shadow:none!important}
+.stApp [data-testid="stAlert"] p,
+.stApp [data-testid="stAlert"] span,
+.stApp [data-testid="stAlert"] strong,
+.stApp [data-testid="stAlert"] li,
+.stApp [data-testid="stAlertContainer"] p{color:#39432d!important}
+.stApp [data-testid="stAlert"] svg{color:#8a642e!important}
+[class*="st-key-gallery_card_"] [data-testid="stButton"] [data-testid="stMarkdownContainer"]{min-height:0}
 
 </style>
 """, unsafe_allow_html=True)
@@ -607,7 +647,8 @@ with st.expander("Открыть каталог — выбрать или сме
                         st.session_state["chosen_design"] = design_id
                         st.rerun()
 if chosen not in designs:
-    st.info("Сначала выберите картинку выше." if ru else "First choose a picture above.")
+    st.caption("Чтобы продолжить, нажмите «Выбрать эту сцену» или «Выбрать эту рамку» под картинкой."
+               if ru else "To continue, click Choose this scene or Choose this frame below a picture.")
     st.stop()
 
 st.success(("Вы выбрали: " if ru else "Selected: ") + designs[chosen]["title"])
