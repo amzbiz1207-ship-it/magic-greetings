@@ -693,6 +693,65 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
 
 
 st.set_page_config(page_title="Magic Greetings", page_icon="✦", layout="wide")
+
+# Read-only service diagnostics. Never sends customer photos or creates images.
+if st.query_params.get("connection_check") == "1":
+    st.header("Magic Greetings — connection check")
+    st.caption("Read-only connectivity check. No image generation or payment request is sent.")
+    try:
+        diagnostic_key = str(st.secrets.get("OPENAI_API_KEY") or os.environ.get("OPENAI_API_KEY", ""))
+    except (FileNotFoundError, AttributeError):
+        diagnostic_key = os.environ.get("OPENAI_API_KEY", "")
+    diagnostic_model = os.environ.get("MAGIC_GREETING_IMAGE_MODEL", "gpt-image-2.6-sunburst")
+
+    def probe_image_connection(key, model):
+        started = time.monotonic()
+        try:
+            response = requests.get("https://api.openai.com/v1/models/" + model,
+                                    headers={"Authorization": "Bearer " + key}, timeout=(8, 15))
+            code = ""
+            if not response.ok:
+                try:
+                    code = str(response.json().get("error", {}).get("code") or "unknown")[:80]
+                except (ValueError, AttributeError):
+                    code = "unreadable_response"
+            return {"http_status": response.status_code, "code": code,
+                    "elapsed_seconds": round(time.monotonic()-started, 2),
+                    "model": model, "request_reference": response.headers.get("x-request-id", "")}
+        except requests.RequestException as error:
+            return {"failure": type(error).__name__, "elapsed_seconds": round(time.monotonic()-started, 2)}
+
+    @st.cache_resource(ttl=300)
+    def start_connection_probe(key_digest, model, _key):
+        executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="magic-connectivity")
+        future = executor.submit(probe_image_connection, _key, model)
+        executor.shutdown(wait=False)
+        return future
+
+    if not diagnostic_key:
+        st.error("OPENAI_API_KEY is not configured on the deployed server.")
+        st.stop()
+    diagnostic_future = start_connection_probe(hashlib.sha256(diagnostic_key.encode()).hexdigest(), diagnostic_model, diagnostic_key)
+    if "connection_check_started" not in st.session_state:
+        st.session_state["connection_check_started"] = time.monotonic()
+    @st.fragment(run_every=2)
+    def show_connection_probe():
+        elapsed = round(time.monotonic() - st.session_state["connection_check_started"], 1)
+        st.write("Browser update timer:", elapsed, "seconds")
+        if diagnostic_future.done():
+            result = diagnostic_future.result()
+            if result.get("http_status") == 200:
+                st.success("Server reached OpenAI. Configured image model is accessible.")
+            else:
+                st.error("Connection or model-access check failed.")
+            st.json(result)
+        elif elapsed < 30:
+            st.info("Checking the image service connection…")
+        else:
+            st.error("No connection response within 30 seconds. This is not an image-generation request.")
+    show_connection_probe()
+    st.stop()
+
 L = json.loads((ROOT / "locales.json").read_text())
 st.markdown("""
 <style>
