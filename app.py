@@ -58,7 +58,12 @@ def load_photo(data):
             if source.width * source.height > 20_000_000:
                 raise PhotoError("pixels")
             source.load()
-            photo = ImageOps.exif_transpose(source).convert("RGBA")
+            oriented = ImageOps.exif_transpose(source)
+            # Bound phone originals before RGBA copies and API multipart encoding.
+            oriented.thumbnail((2400, 2400), Image.Resampling.LANCZOS)
+            if oriented.mode == "RGB":
+                return oriented.copy()
+            photo = oriented.convert("RGBA")
             background = Image.new("RGBA", photo.size, "white")
             background.alpha_composite(photo)
             return background.convert("RGB")
@@ -268,13 +273,19 @@ def _request_scene(image, editable, prompt, api_key, reference=None, face_refere
     progress["stage"] = "preparing"
     files = [("image[]", ("scene.png", encode_image(image, "PNG"), "image/png"))]
     if reference is not None:
-        files.append(("image[]", ("original-photo.png", encode_image(reference, "PNG"), "image/png")))
+        bounded_reference = reference.copy()
+        bounded_reference.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+        files.append(("image[]", ("original-photo.jpg", encode_image(bounded_reference, "JPEG"), "image/jpeg")))
     if face_reference is not None:
         files.append(("image[]", ("original-face.png", encode_image(face_reference, "PNG"), "image/png")))
     if editable is not None:
         mask = Image.new("RGBA", image.size, (0, 0, 0, 255))
         mask.putalpha(ImageOps.invert(editable))
         files.append(("mask", ("edit-mask.png", encode_image(mask, "PNG"), "image/png")))
+    upload_bytes = sum(len(item[1][1]) for item in files)
+    if upload_bytes > 20 * 1024 * 1024:
+        raise ValueError("Prepared image request is too large")
+    progress["upload_bytes"] = upload_bytes
     progress["stage"] = "waiting"
     logging.getLogger(__name__).info("Image request submitted to provider")
     response = requests.post(
@@ -284,11 +295,17 @@ def _request_scene(image, editable, prompt, api_key, reference=None, face_refere
             "model": os.environ.get("MAGIC_GREETING_IMAGE_MODEL", "gpt-image-2.6-sunburst"),
             "prompt": IDENTITY_RULES + prompt,
             "size": f"{image.width}x{image.height}",
+            "n": "1",
+            "output_format": "png",
+            "quality": "high",
+            "complexity": "low" if editable is not None and float(np.asarray(editable).mean()) < 127 else "medium",
         },
         files=files,
         timeout=(10, 220),
     )
     progress["stage"] = "received"
+    progress["http_status"] = response.status_code
+    progress["provider_reference"] = response.headers.get("x-request-id", "")
     if not response.ok:
         try:
             detail = response.json().get("error", {})
@@ -346,6 +363,10 @@ def edit_scene(image, editable, prompt, api_key, reference=None, face_reference=
     try:
         return pending["future"].result()
     finally:
+        st.session_state["scene_last_diagnostic"] = {
+            "ticket": pending["ticket"],
+            "elapsed_seconds": round(time.monotonic() - pending["started"], 1),
+            **pending.get("progress", {})}
         st.session_state.pop("scene_pending_request", None)
 
 
@@ -357,6 +378,13 @@ def watch_scene_request(russian):
     if pending["future"].done():
         st.rerun(scope="app")
     elapsed = max(0, int(time.monotonic() - pending["started"]))
+    text = (("Создаём открытку" if russian else "Creating your card") +
+            f" · {elapsed // 60}:{elapsed % 60:02d}") if elapsed < 240 else (
+            "Сервис задерживает ответ — см. сообщение под формой" if russian else
+            "The image service is delayed — see the message below the form")
+    st.markdown('<div role="status" aria-live="polite" style="position:fixed;bottom:18px;left:5%;right:5%;z-index:9999;'
+                'padding:16px 22px;border-radius:14px;background:#194b38;color:white;box-shadow:0 5px 24px #0004;'
+                'font:600 17px Arial;text-align:center">' + text + '</div>', unsafe_allow_html=True)
     if elapsed >= 240:
         st.warning("Сервис пока не ответил. Повторный запрос не отправляем. Фото и текст сохранены в этой вкладке."
                    if russian else
@@ -374,6 +402,8 @@ def watch_scene_request(russian):
     stage = pending.get("progress", {}).get("stage", "queued")
     st.caption(stages.get(stage, stages["queued"])[0 if russian else 1])
     st.caption(("Номер запроса: " if russian else "Request reference: ") + pending["ticket"])
+    if st.button("Обновить состояние" if russian else "Refresh status", key="refresh_pending_scene"):
+        st.rerun(scope="app")
 
 
 @contextmanager
@@ -1003,7 +1033,7 @@ if st.session_state.get("chosen_design"):
     st.markdown('<style>.st-key-gallery_card_' + current_choice + ',.st-key-quick_scene_' + current_choice +
                 '{border:3px solid #27744e!important;box-shadow:0 0 0 3px #27744e22!important}</style>', unsafe_allow_html=True)
 
-api_key = runtime_setting("OPENAI_API_KEY")
+api_key = runtime_setting("OPENAI_API_KEY").strip()
 preview_password = runtime_setting("MAGIC_GREETING_TEST_PASSWORD")
 designs = {
     "royal": {
