@@ -591,14 +591,14 @@ header[data-testid="stHeader"]{height:0!important;background:transparent!importa
 .st-key-header_language [data-baseweb="select"]>div{background:#10273f!important;color:#fff6e8!important;border:1px solid #8e876d!important;border-radius:28px!important;min-height:42px}
 .st-key-header_language [data-baseweb="select"] span,.st-key-header_language [data-baseweb="select"] div{color:#fff6e8!important}
 .st-key-header_language [data-baseweb="select"] svg{fill:#fff6e8!important}
-.mg-landing{height:620px;position:relative;background-color:#081b30;background-size:cover;background-position:center 52%;border-radius:0 0 22px 22px;overflow:hidden;margin-top:-17px;margin-bottom:10px}
+.mg-landing{height:560px;position:relative;background-color:#081b30;background-size:cover;background-position:center 52%;border-radius:0 0 22px 22px;overflow:hidden;margin-top:-17px;margin-bottom:10px}
 .mg-copy{position:relative;width:53%;padding:40px 0 34px 64px;box-sizing:border-box;z-index:1}
 .stApp .mg-landing h1{font-family:Georgia,serif;font-style:italic;font-weight:400;font-size:clamp(40px,4.2vw,62px);line-height:1.06;letter-spacing:-1.7px;color:#fff5df!important;margin:0 0 24px;padding:0}
 .mg-landing h1 em{color:#edc77e;font-weight:400}
 .stApp .mg-landing p{font-size:17px;line-height:1.55;color:#fff8ee!important;max-width:485px;margin:0 0 25px}
 .mg-features{display:grid;grid-template-columns:repeat(4,1fr);max-width:480px;gap:18px;margin:24px 0 28px}
 .mg-feature{color:#fff8ee;text-align:center;font-size:12px;line-height:1.4}
-.mg-feature img{display:block;width:30px;height:30px;margin:0 auto 9px}
+.mg-feature img{display:block;width:34px;height:34px;margin:0 auto 9px}
 .mg-cta{display:inline-flex;align-items:center;justify-content:center;gap:18px;background:#a21225;color:#fff9ed!important;border:2px solid #e6bd67;border-radius:38px;padding:17px 28px;font-family:Georgia,serif;font-size:23px;font-weight:700;text-decoration:none!important;box-shadow:0 4px 18px #0005}
 .mg-cta:hover{background:#bd1b30;color:white!important;box-shadow:0 5px 26px #efc86d45}
 .mg-cta:focus-visible,.mg-nav a:focus-visible{outline:3px solid #f3d398;outline-offset:5px}
@@ -626,10 +626,22 @@ header[data-testid="stHeader"]{height:0!important;background:transparent!importa
 .stApp [data-testid="stRadio"] [role="radiogroup"]{flex-wrap:wrap;gap:14px}
 .stApp [data-testid="stImage"] img{border-radius:12px}
 .mg-help{font-size:14px;line-height:1.65;color:#405144}
-@media(min-width:1550px){.mg-copy{padding-top:54px}.mg-landing{height:660px}}
+@media(min-width:1550px){.mg-copy{padding-top:54px}.mg-landing{height:600px}}
 @media(max-width:1100px){.mg-nav{gap:14px}.mg-nav a{font-size:13px}.mg-brand{width:175px}.st-key-header_bar{padding:12px 24px!important}.mg-copy{padding-left:36px;width:55%}.mg-landing{height:560px}.mg-landing h1{font-size:46px!important}.mg-cta{font-size:20px;padding:14px 20px}.mg-features{gap:10px}}
 @media(max-width:760px){.block-container{padding:8px 10px 32px!important}.st-key-header_bar{padding:10px 14px!important;border-radius:16px 16px 0 0}.mg-brand{width:155px;height:52px}.mg-nav{display:none}.st-key-header_bar [data-testid="stHorizontalBlock"]{flex-wrap:nowrap;gap:12px}.st-key-header_bar [data-testid="stColumn"]:nth-child(2){display:none}.st-key-header_bar [data-testid="stColumn"]{min-width:0!important;flex:1!important}.mg-landing{height:790px;background-size:auto 460px;background-repeat:no-repeat;background-position:80% bottom;border-radius:0 0 16px 16px}.mg-copy{width:100%;padding:24px 24px 0}.mg-landing h1{font-size:40px!important;max-width:100%;letter-spacing:-1px}.mg-landing p{font-size:14px!important;max-width:100%;margin-bottom:14px!important}.mg-features{gap:14px;max-width:430px;margin:16px 0}.mg-feature{font-size:11px}.mg-feature img{width:25px;height:25px;margin-bottom:5px}.mg-cta{font-size:19px;padding:12px 20px}.mg-section-title{font-size:30px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+
+.st-key-header_language [data-testid="stSelectbox"]{border:1px solid #7d826f;border-radius:24px;background:#10273f;color:#fff6e8}
+.st-key-header_language [role="combobox"],.st-key-header_language input{background:#10273f!important;color:#fff6e8!important;-webkit-text-fill-color:#fff6e8!important;border-radius:24px!important}
+.st-key-header_language button,.st-key-header_language button *{background:#10273f!important;color:#fff6e8!important;fill:#fff6e8!important}
+.st-key-header_language [data-testid="stSelectbox"]>div{background:#10273f!important;border-color:#7d826f!important;border-radius:24px!important}
+.st-key-header_bar [data-testid="stImage"] img{object-fit:contain}
+[class*="st-key-quick_scene_"]{padding:0!important;background:#fff9ec;border:1px solid #d7bc83!important;border-radius:15px!important;overflow:hidden;box-shadow:0 3px 12px #2c1a0912;margin-bottom:16px}
+[class*="st-key-quick_scene_"] [data-testid="stImage"] img{border-radius:14px 14px 0 0!important;aspect-ratio:16/11;object-fit:cover;width:100%}
+[class*="st-key-quick_scene_"] [data-testid="stButton"]{padding:0 8px 8px}
+[class*="st-key-quick_scene_"] button{width:100%;font-size:13px}
+@media(max-width:760px){[class*="st-key-quick_scene_"]{display:none}}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -771,6 +783,21 @@ def frame_example(theme):
 ru = lang == "ru"
 st.markdown('<div id="mg-scenes" class="mg-section-title">' + ("Выберите праздничную сцену" if ru else "Choose a Template") + '</div>', unsafe_allow_html=True)
 st.markdown('<p class="mg-section-note">' + ("Выберите картинку ниже, затем добавьте своё фото и поздравление." if ru else "Choose your favourite scene, then add your photo and a heartfelt greeting.") + '</p>', unsafe_allow_html=True)
+
+# Quick visual choices use the existing, working scene identifiers.
+quick_scenes = [("city", "Для неё", "For Her"), ("snow", "Для него", "For Him"),
+                ("market", "Для двоих", "For Two"), ("fireplace", "Для семьи", "For Family"),
+                ("forest", "Зимняя сказка", "Winter Magic"), ("fireworks", "Новый год", "New Year")]
+quick_columns = st.columns(6, gap="small")
+for quick_column, (quick_id, quick_ru, quick_en) in zip(quick_columns, quick_scenes):
+    with quick_column:
+        with st.container(border=True, key="quick_scene_"+quick_id):
+            encoded = MARKET_EXAMPLE if quick_id == "market" else SCENE_EXAMPLES[quick_id]
+            st.image(base64.b64decode(encoded), width="stretch")
+            if st.button(quick_ru if ru else quick_en, key="quick_choose_"+quick_id):
+                st.session_state["chosen_design"] = quick_id
+                st.rerun()
+
 api_key = runtime_setting("OPENAI_API_KEY")
 preview_password = runtime_setting("MAGIC_GREETING_TEST_PASSWORD")
 designs = {
