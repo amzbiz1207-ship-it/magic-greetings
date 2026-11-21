@@ -642,6 +642,14 @@ header[data-testid="stHeader"]{height:0!important;background:transparent!importa
 [class*="st-key-quick_scene_"] button{width:100%;font-size:13px}
 @media(max-width:760px){[class*="st-key-quick_scene_"]{display:none}}
 
+
+.st-key-header_language [data-testid="stSelectbox"]{background:transparent!important;border:0!important}
+.st-key-header_language [role="group"]{background:#10273f!important;border:1px solid #8f8b70!important;border-radius:24px!important;overflow:hidden;padding:0 8px;box-shadow:none!important}
+.st-key-header_language input{border:0!important;box-shadow:none!important;background:transparent!important}
+.st-key-header_language button,.st-key-header_language button *{background:transparent!important;color:#fff6e8!important}
+.st-key-header_language button svg{fill:currentColor!important}
+.st-key-header_language button svg path:first-child{fill:none!important}
+
 </style>
 """, unsafe_allow_html=True)
 
