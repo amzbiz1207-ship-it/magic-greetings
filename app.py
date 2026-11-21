@@ -1,9 +1,11 @@
 import base64
 from io import BytesIO
 from contextlib import contextmanager
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+from concurrent.futures import ThreadPoolExecutor
 import os
 import logging
+import time
+import uuid
 
 import cv2
 import numpy as np
@@ -257,6 +259,10 @@ IDENTITY_RULES = (
 )
 
 
+class ScenePending(Exception):
+    pass
+
+
 def _request_scene(image, editable, prompt, api_key, reference=None, face_reference=None):
     files = [("image[]", ("scene.png", encode_image(image, "PNG"), "image/png"))]
     if reference is not None:
@@ -276,9 +282,19 @@ def _request_scene(image, editable, prompt, api_key, reference=None, face_refere
             "size": f"{image.width}x{image.height}",
         },
         files=files,
-        timeout=(10, 240),
+        timeout=(10, 220),
     )
-    response.raise_for_status()
+    if not response.ok:
+        try:
+            detail = response.json().get("error", {})
+            code = str(detail.get("code") or detail.get("type") or "unknown")
+        except (ValueError, AttributeError):
+            code = "unreadable_response"
+        # Never log the API key, images, prompt or customer names.
+        logging.getLogger(__name__).error(
+            "Image API failed: HTTP %s, code=%s, request_id=%s",
+            response.status_code, code[:80], response.headers.get("x-request-id", "unknown"))
+        response.raise_for_status()
     result = base64.b64decode(response.json()["data"][0]["b64_json"], validate=True)
     with Image.open(BytesIO(result)) as candidate:
         if candidate.size != image.size:
@@ -290,13 +306,15 @@ def _request_scene(image, editable, prompt, api_key, reference=None, face_refere
         return Image.composite(edited, image, editable)
 
 
-@st.cache_resource
 def scene_request_pool():
-    return ThreadPoolExecutor(max_workers=2, thread_name_prefix="magic-image")
+    # Isolate sessions: one customer's long request must not queue everyone else.
+    if "scene_executor" not in st.session_state:
+        st.session_state["scene_executor"] = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="magic-image")
+    return st.session_state["scene_executor"]
 
 
 def edit_scene(image, editable, prompt, api_key, reference=None, face_reference=None):
-    # Limit the entire wait and retain jobs so retries do not duplicate API calls.
     fingerprint = hashlib.sha256(prompt.encode())
     for source in (image, editable, reference, face_reference):
         if source is not None:
@@ -306,7 +324,7 @@ def edit_scene(image, editable, prompt, api_key, reference=None, face_reference=
     pending = st.session_state.get("scene_pending_request")
     if pending and pending["signature"] != signature:
         if not pending["future"].done():
-            raise requests.Timeout("Previous image request is still running")
+            raise ScenePending()
         st.session_state.pop("scene_pending_request", None)
         pending = None
     if pending is None:
@@ -314,17 +332,37 @@ def edit_scene(image, editable, prompt, api_key, reference=None, face_reference=
             _request_scene, image.copy(), editable.copy() if editable is not None else None,
             prompt, api_key, reference.copy() if reference is not None else None,
             face_reference.copy() if face_reference is not None else None)
-        pending = {"signature": signature, "future": future}
+        pending = {"signature": signature, "future": future,
+                   "started": time.monotonic(), "ticket": uuid.uuid4().hex[:10]}
         st.session_state["scene_pending_request"] = pending
+    if not pending["future"].done():
+        raise ScenePending()
     try:
-        result = pending["future"].result(timeout=240)
-    except FutureTimeout as error:
-        raise requests.Timeout("Image request exceeded the UI wait limit") from error
-    except Exception:
+        return pending["future"].result()
+    finally:
         st.session_state.pop("scene_pending_request", None)
-        raise
-    st.session_state.pop("scene_pending_request", None)
-    return result
+
+
+@st.fragment(run_every=2)
+def watch_scene_request(russian):
+    pending = st.session_state.get("scene_pending_request")
+    if not pending:
+        return
+    if pending["future"].done():
+        st.rerun(scope="app")
+    elapsed = max(0, int(time.monotonic() - pending["started"]))
+    if elapsed >= 240:
+        st.warning("Сервис пока не ответил. Повторный запрос не отправляем. Фото и текст сохранены в этой вкладке."
+                   if russian else
+                   "The service has not responded yet. No duplicate request is being sent. Your photo and message remain in this tab.")
+        if st.button("Проверить готовность" if russian else "Check result", key="check_pending_scene"):
+            st.rerun(scope="app")
+        return
+    st.info((f"Создаём открытку · прошло {elapsed // 60}:{elapsed % 60:02d}. "
+             "Результат появится автоматически. Не закрывайте эту вкладку.") if russian else
+            (f"Creating your card · elapsed {elapsed // 60}:{elapsed % 60:02d}. "
+             "The result will appear automatically. Keep this tab open."))
+    st.caption(("Номер запроса: " if russian else "Request reference: ") + pending["ticket"])
 
 
 @contextmanager
@@ -343,6 +381,10 @@ def generation_status(russian):
             with st.spinner("Ожидаем изображение от сервиса…" if russian else
                             "Waiting for the image service…", show_time=True):
                 yield
+        except ScenePending:
+            status.update(label="Запрос отправлен — ожидаем результат." if russian else
+                          "Request sent — waiting for the result.", state="complete", expanded=False)
+            raise
         except Exception:
             status.update(label="Создание не завершилось — см. сообщение ниже." if russian else
                           "Creation did not finish — see the message below.", state="error", expanded=True)
@@ -456,7 +498,10 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
         faces = selected_faces
     else:
         faces = st.session_state["scene_confirmed_faces"]
-    if not versions and st.button(t["create"], type="primary"):
+    resume = st.session_state.get("scene_resume", {})
+    if not versions and (st.button(t["create"], type="primary") or
+                         resume == {"digest": digest, "action": "create"}):
+        st.session_state["scene_resume"] = {"digest": digest, "action": "create"}
         with generation_status(ru):
             if market:
                 prompt = (
@@ -496,6 +541,7 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                 )
                 edit_mask = scene_editable(canvas.size, faces)
             result = edit_scene(canvas, edit_mask, prompt, api_key, reference=photo)
+        st.session_state.pop("scene_resume", None)
         st.session_state["scene_original_faces"] = list(faces)
         st.session_state["scene_confirmed_faces"] = detect_scene_faces(result) if market else faces
         versions.append(result)
@@ -525,7 +571,13 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
             choice = st.selectbox("Лицо" if ru else "Face", choices,
                                   format_func=lambda value: str(value + 1))
             note = st.text_area("Что поправить?" if ru else "What should change?", max_chars=300)
-            if st.button("Применить правку" if ru else "Apply refinement", disabled=not note.strip()):
+            refine_clicked = st.button("Применить правку" if ru else "Apply refinement", disabled=not note.strip())
+            resume = st.session_state.get("scene_resume", {})
+            if refine_clicked or (resume.get("digest") == digest and resume.get("action") == "refine"):
+                if refine_clicked:
+                    st.session_state["scene_resume"] = {"digest": digest, "action": "refine", "choice": choice, "note": note}
+                else:
+                    choice, note = resume["choice"], resume["note"]
                 with generation_status(ru):
                     x, y, w, h = st.session_state["scene_original_faces"][choice]
                     face_reference = canvas.crop((max(0, x-20), max(0, y-20),
@@ -539,6 +591,7 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                         "composition and other people. Restore the person's original facial features "
                         "and expression. Apply this localized request only: " + note,
                         api_key, reference=photo, face_reference=face_reference))
+                st.session_state.pop("scene_resume", None)
                 st.rerun()
     if can_refine:
         st.caption(f"Корректировок осталось: {4-len(versions)}" if ru else
@@ -1075,27 +1128,48 @@ try:
                 st.session_state["result_filename"] + "." + extension, mime,
                 on_click="ignore",
             )
+except ScenePending:
+    watch_scene_request(lang == "ru")
 except PhotoError as error:
     st.error(t["errors"].get(str(error), "Не удалось подготовить открытку." if lang == "ru"
                                 else "Could not prepare the card."))
 except requests.Timeout:
-    st.error("Результат пока не получен. Фото и текст остались на странице. "
-             "Запрос мог продолжить обработку у сервиса. Не обновляйте вкладку: подождите немного "
-             "и нажмите кнопку создания ещё раз — сайт проверит тот же запрос без повторной отправки."
+    st.session_state.pop("scene_resume", None)
+    st.error("Сервис изображений не ответил вовремя. Фото и текст остались в этой вкладке. "
+             "Обработка у сервиса могла продолжиться; автоматический повтор отключён. "
+             "Новая попытка отправит новый запрос."
              if lang == "ru" else
-             "The result has not arrived yet. Your photo and message are still on this page. "
-             "The service may still be processing the request. Do not refresh: wait a little and "
-             "click the create button again to check the same request without submitting it twice.")
+             "The image service timed out. Your photo and message remain in this tab. "
+             "Processing may have continued at the provider; automatic retries are disabled. "
+             "A new attempt will send a new request.")
 except (requests.RequestException, KeyError, IndexError, ValueError) as error:
+    st.session_state.pop("scene_resume", None)
     if scene_mode:
         response = getattr(error, "response", None)
         logging.getLogger(__name__).error("Scene request or rendering failed (%s, HTTP %s)",
                                           type(error).__name__, getattr(response, "status_code", None))
-        st.error("Генерация не завершилась. Попробуйте ещё раз." if lang == "ru" else
-                 "The scene could not be generated. Please try again.")
+        status = getattr(response, "status_code", None)
+        try:
+            code = response.json().get("error", {}).get("code", "") if response is not None else ""
+        except (ValueError, AttributeError):
+            code = ""
+        if status == 401:
+            reason = "Сервис не принимает API-ключ. Владельцу сайта нужно проверить подключение." if lang == "ru" else "The service rejected the API key. The site owner needs to check the connection."
+        elif status == 429 and code in {"insufficient_quota", "billing_hard_limit_reached"}:
+            reason = "Недостаточно доступного баланса API. Владельцу сайта нужно проверить оплату и лимиты." if lang == "ru" else "The API balance or billing limit needs attention from the site owner."
+        elif status == 429:
+            reason = "Сервис перегружен. Подождите немного перед новой попыткой." if lang == "ru" else "The service is busy. Please wait before trying again."
+        elif status in (400, 403, 404):
+            reason = "Сервис отклонил запрос. Владельцу сайта нужно проверить настройки и доступ к модели." if lang == "ru" else "The service rejected the request. The site owner needs to check model access and settings."
+        elif status and status >= 500:
+            reason = "Временный сбой сервиса изображений. Фото и текст остались в этой вкладке." if lang == "ru" else "The image service encountered a temporary error. Your photo and message remain in this tab."
+        else:
+            reason = "Не удалось прочитать результат сервиса. Фото и текст остались в этой вкладке." if lang == "ru" else "The image service result could not be read. Your photo and message remain in this tab."
+        st.error(reason)
     else:
         st.error("Не удалось подготовить открытку." if lang == "ru" else "Could not prepare the card.")
 except Exception as error:
+    st.session_state.pop("scene_resume", None)
     if scene_mode:
         logging.getLogger(__name__).error("Card preparation failed (%s)", type(error).__name__)
         st.error("Не удалось подготовить открытку к скачиванию." if lang == "ru"
