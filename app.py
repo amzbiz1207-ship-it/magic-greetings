@@ -1199,14 +1199,22 @@ if scene_mode:
     st.caption("Загрузка и текст доступны сразу. Тестовый пароль нужен только для запуска генерации."
                if ru else "You can upload and edit your message now. The test password is needed only to generate.")
     if scene_available:
+        access_confirmed = hmac.compare_digest(
+            str(st.session_state.get("scene_access", "")).encode(), preview_password.encode())
         with st.form("trial_access_form", clear_on_submit=False):
             supplied = st.text_input("Пароль для пробной генерации" if ru else
                                      "Password for trial generation",
                                      type="password", key="scene_access",
                                      help="Введите пароль и нажмите кнопку подтверждения ниже." if ru else
                                           "Enter your password and click the confirmation button below.")
-            unlock = st.form_submit_button("Подтвердить пароль" if ru else "Confirm password")
-        scene_authorized = hmac.compare_digest(supplied.encode(), preview_password.encode())
+            unlock = st.form_submit_button(
+                ("✓ Доступ открыт" if ru else "✓ Access confirmed") if access_confirmed else
+                ("Подтвердить пароль" if ru else "Confirm password"),
+                disabled=access_confirmed, type="primary")
+        with st.spinner("Проверяем пароль…" if ru else "Checking password…"):
+            scene_authorized = hmac.compare_digest(supplied.encode(), preview_password.encode())
+        if unlock and scene_authorized:
+            st.rerun()
         if scene_authorized:
             st.success("Тестовый доступ открыт. Теперь можно создать открытку." if ru else
                        "Trial access unlocked. You can now create your card.")
