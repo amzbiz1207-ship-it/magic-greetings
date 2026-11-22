@@ -517,6 +517,8 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
     ru = lang == "ru"
     market = scene == "market"
     royal = scene == "royal"
+    def blocked_create():
+        st.button(t["create"], type="primary", disabled=True, key="scene_prerequisite")
     digest = f"{digest}_{scene}_identity_v3"
     if st.session_state.get("scene_digest") != digest:
         canvas = royal_template_image() if royal else scene_input(photo, market)
@@ -526,6 +528,7 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
         if royal and len(source_faces) != 1:
             st.warning("Для этого портрета загрузите фото с одним хорошо видимым лицом." if ru else
                        "Upload a photo with one clearly visible face for this portrait.")
+            blocked_create()
             return
         saved = st.session_state.setdefault("scene_saved", {}).get(digest, {})
         st.session_state.update(scene_digest=digest, scene_source=canvas, scene_faces=faces,
@@ -565,6 +568,7 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                    ("**Generation has not started.** Please replace this photo: " + details +
                     ". Upload a clearer original in section 2 above. "
                     "No generation request was sent at this step."))
+        blocked_create()
         return
     if not versions:
         st.markdown("**Проверьте найденные лица**" if ru else "**Check detected faces**")
@@ -584,9 +588,11 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                     selected_faces.append(box)
         if market and len(selected_faces) != 2:
             st.info("Для ярмарки отметьте два лица." if ru else "Select two faces for the Christmas market.")
+            blocked_create()
             return
         if not 1 <= len(selected_faces) <= 5:
             st.warning("Выберите от одного до пяти лиц." if ru else "Select one to five faces.")
+            blocked_create()
             return
         faces = selected_faces
     else:
@@ -1268,6 +1274,9 @@ def supported_characters():
 
 if not uploaded:
     st.session_state.pop("result", None)
+    st.info("Чтобы создать открытку, сначала загрузите фотографию в разделе 2." if ru else
+            "To create your card, first upload a photo in section 2.")
+    st.button(t["create"], type="primary", disabled=True, key="create_needs_photo")
     st.stop()
 
 data = uploaded.getvalue()
