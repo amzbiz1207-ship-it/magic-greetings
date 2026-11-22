@@ -659,7 +659,10 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                     "poses, scale and positions. This is a wide environmental photograph, not a close-up: "
                     "the entire group must occupy no more than 60–65 percent of the frame width and height. "
                     "Show substantial beautiful festive surroundings on both sides and above. "
-                    "Keep protected faces, glasses, expressions and lighting. "
+                    "Preserve each person's exact facial identity, facial anatomy, age, glasses and expression "
+                    "from the original reference. Render faces naturally in full color matching the scene's "
+                    "warm lighting, including when the reference is black and white. Seamlessly integrate "
+                    "skin, hair, ears and necks; no pasted cutouts, halos or original background fragments. "
                     "Leave the added space above and around people filled with the setting. "
                     "Reserve the lower 24 percent as a calm, uncluttered part of this same setting "
                     "for a short greeting. Keep faces, hands, gifts, decorations and other focal "
@@ -667,12 +670,12 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                     "lit rug or tabletop indoors, with low visual detail and even lighting. "
                     "Do not draw a separate banner, frame, panel or text."
                 )
-                edit_mask = scene_editable(canvas.size, faces)
+                edit_mask = None
             result = edit_scene(canvas, edit_mask, prompt, api_key, reference=photo)
         LOGGER.info("rendered scene version; scene=%s size=%sx%s", scene, result.width, result.height)
         st.session_state.pop("scene_resume", None)
         st.session_state["scene_original_faces"] = list(faces)
-        st.session_state["scene_confirmed_faces"] = detect_scene_faces(result) if market else faces
+        st.session_state["scene_confirmed_faces"] = detect_scene_faces(result) if not royal else faces
         versions.append(result)
         st.session_state["scene_saved"][digest] = {
             "versions": versions, "faces": st.session_state["scene_confirmed_faces"],
