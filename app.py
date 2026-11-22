@@ -634,7 +634,8 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                     "60–65 percent of the image width and height, never fill the frame. "
                     "Complete heads, generous headroom, anatomically consistent head sizes at the same "
                     "camera distance, realistic necks and shoulders. Elegant light cream and beige winter "
-                    "coats with burgundy and evergreen scarves, a bright festive wardrobe. "
+                    "coats: an elegant ivory faux-fur coat for the woman and a refined light beige wool "
+                    "coat for the man, with burgundy and evergreen accents, bright festive wardrobe. "
                     "Compose both people in the upper 72 percent of the image. Reserve the lower "
                     "24 percent for a short greeting: an uncluttered softly lit wooden tabletop "
                     "with no hands, faces, mugs, gifts or busy decorations in that lower text zone. "
@@ -655,7 +656,10 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                 }[scene]
                 prompt = (
                     "Transform the setting around these people into " + setting + ". "
-                    "Use festive knits indoors and elegant warm coats outdoors. Preserve people, "
+                    "Use festive ivory, cream and rich burgundy knits indoors. Outdoors use elegant light "
+                    "ivory faux-fur coats for women and refined beige or cream wool coats for men, "
+                    "with burgundy and evergreen accents. Bright celebratory wardrobe, no all-black "
+                    "coats or uniformly dark outfits. Preserve people, "
                     "poses, scale and positions. This is a wide environmental photograph, not a close-up: "
                     "the entire group must occupy no more than 60–65 percent of the frame width and height. "
                     "Show substantial beautiful festive surroundings on both sides and above. "
