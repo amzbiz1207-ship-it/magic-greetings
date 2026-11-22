@@ -4,6 +4,14 @@ from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 import os
 import logging
+
+LOGGER = logging.getLogger("magic_greetings")
+LOGGER.setLevel(logging.INFO)
+LOGGER.propagate = False
+if not LOGGER.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s MAGIC %(levelname)s %(message)s"))
+    LOGGER.addHandler(handler)
 import time
 import uuid
 
@@ -271,6 +279,7 @@ class ScenePending(Exception):
 def _request_scene(image, editable, prompt, api_key, reference=None, face_reference=None, progress=None):
     progress = progress if progress is not None else {}
     progress["stage"] = "preparing"
+    LOGGER.info("request[%s] preparing image payload", progress.get("ticket", "unknown"))
     files = [("image[]", ("scene.png", encode_image(image, "PNG"), "image/png"))]
     if reference is not None:
         bounded_reference = reference.copy()
@@ -287,7 +296,9 @@ def _request_scene(image, editable, prompt, api_key, reference=None, face_refere
         raise ValueError("Prepared image request is too large")
     progress["upload_bytes"] = upload_bytes
     progress["stage"] = "waiting"
-    logging.getLogger(__name__).info("Image request submitted to provider")
+    LOGGER.info("request[%s] sending to image service; upload_bytes=%s size=%sx%s model=%s",
+                progress.get("ticket", "unknown"), upload_bytes, image.width, image.height,
+                os.environ.get("MAGIC_GREETING_IMAGE_MODEL", "gpt-image-2.6-sunburst"))
     response = requests.post(
         "https://api.openai.com/v1/images/edits",
         headers={"Authorization": f"Bearer {api_key}"},
@@ -304,6 +315,8 @@ def _request_scene(image, editable, prompt, api_key, reference=None, face_refere
         timeout=(10, 220),
     )
     progress["stage"] = "received"
+    LOGGER.info("request[%s] received HTTP %s provider_reference=%s", progress.get("ticket", "unknown"),
+                response.status_code, response.headers.get("x-request-id", "unknown"))
     progress["http_status"] = response.status_code
     progress["provider_reference"] = response.headers.get("x-request-id", "")
     if not response.ok:
@@ -313,7 +326,7 @@ def _request_scene(image, editable, prompt, api_key, reference=None, face_refere
         except (ValueError, AttributeError):
             code = "unreadable_response"
         # Never log the API key, images, prompt or customer names.
-        logging.getLogger(__name__).error(
+        LOGGER.error(
             "Image API failed: HTTP %s, code=%s, request_id=%s",
             response.status_code, code[:80], response.headers.get("x-request-id", "unknown"))
         response.raise_for_status()
@@ -350,19 +363,22 @@ def edit_scene(image, editable, prompt, api_key, reference=None, face_reference=
         st.session_state.pop("scene_pending_request", None)
         pending = None
     if pending is None:
-        progress = {"stage": "queued"}
+        progress = {"stage": "queued", "ticket": uuid.uuid4().hex[:10]}
+        LOGGER.info("request[%s] accepted", progress["ticket"])
         future = scene_request_pool().submit(
             _request_scene, image.copy(), editable.copy() if editable is not None else None,
             prompt, api_key, reference.copy() if reference is not None else None,
             face_reference.copy() if face_reference is not None else None, progress=progress)
         pending = {"signature": signature, "future": future,
-                   "started": time.monotonic(), "ticket": uuid.uuid4().hex[:10], "progress": progress}
+                   "started": time.monotonic(), "ticket": progress["ticket"], "progress": progress}
         st.session_state["scene_pending_request"] = pending
     if not pending["future"].done():
         raise ScenePending()
     try:
         return pending["future"].result()
     finally:
+        LOGGER.info("request[%s] completed future; elapsed=%.1fs stage=%s", pending["ticket"],
+                    time.monotonic()-pending["started"], pending.get("progress", {}).get("stage", "unknown"))
         st.session_state["scene_last_diagnostic"] = {
             "ticket": pending["ticket"],
             "elapsed_seconds": round(time.monotonic() - pending["started"], 1),
@@ -636,6 +652,7 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                 )
                 edit_mask = scene_editable(canvas.size, faces)
             result = edit_scene(canvas, edit_mask, prompt, api_key, reference=photo)
+        LOGGER.info("rendered scene version; scene=%s size=%sx%s", scene, result.width, result.height)
         st.session_state.pop("scene_resume", None)
         st.session_state["scene_original_faces"] = list(faces)
         st.session_state["scene_confirmed_faces"] = detect_scene_faces(result) if market else faces
@@ -1330,7 +1347,7 @@ except (requests.RequestException, KeyError, IndexError, ValueError) as error:
     st.session_state.pop("scene_resume", None)
     if scene_mode:
         response = getattr(error, "response", None)
-        logging.getLogger(__name__).error("Scene request or rendering failed (%s, HTTP %s)",
+        LOGGER.error("Scene request or rendering failed (%s, HTTP %s)",
                                           type(error).__name__, getattr(response, "status_code", None))
         status = getattr(response, "status_code", None)
         try:
@@ -1355,7 +1372,7 @@ except (requests.RequestException, KeyError, IndexError, ValueError) as error:
 except Exception as error:
     st.session_state.pop("scene_resume", None)
     if scene_mode:
-        logging.getLogger(__name__).error("Card preparation failed (%s)", type(error).__name__)
+        LOGGER.error("Card preparation failed (%s)", type(error).__name__)
         st.error("Не удалось подготовить открытку к скачиванию." if lang == "ru"
                  else "Could not prepare the card for download.")
     else:
