@@ -1245,7 +1245,7 @@ if not original:
         horizontal = st.slider(t["horizontal"], 0, 100, 50, key="horizontal")
         vertical = st.slider(t["vertical"], 0, 100, 50, key="vertical")
 
-if uploaded and (st.session_state.get("result") or st.session_state.get("scene_versions")) and st.button(t["reset"],
+if uploaded and st.button(t["reset"],
                           help="Удалить текущее фото и результат, чтобы загрузить другое фото." if ru else
                                "Remove the current photo and result to upload a different photo."):
 
