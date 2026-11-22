@@ -539,8 +539,13 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
     canvas = st.session_state["scene_source"]
     faces = st.session_state["scene_faces"]
     versions = st.session_state["scene_versions"]
-    if st.session_state["scene_issues"] or not faces:
-        issues = set(st.session_state["scene_issues"])
+    issues = set(st.session_state["scene_issues"])
+    # A small but sharp source with detectable faces can proceed with an honest advisory.
+    if issues == {"resolution"} and min(photo.size) >= 400 and faces:
+        st.warning("Фото небольшое: для лучшего сходства рекомендуем оригинал от 600 пикселей по короткой стороне. Можно продолжить с этим снимком." if ru else
+                   "This photo is small. For better likeness, use an original at least 600 pixels on its shortest side. You can continue with this photo.")
+        issues = set()
+    if issues or not faces:
         reasons = []
         if issues & {"blur", "face_blur"}:
             reasons.append("снимок или лицо недостаточно резкие" if ru else
