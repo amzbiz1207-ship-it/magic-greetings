@@ -426,9 +426,9 @@ def watch_scene_request(russian):
 def generation_status(russian):
     label = "Создаём вашу открытку…" if russian else "Creating your card…"
     with st.status(label, expanded=True) as status:
-        st.write("Генерация может занять несколько минут. Общее ожидание ограничено 4 минутами."
+        st.write("Генерация может занять несколько минут. Следите за таймером; повторно нажимать кнопку не нужно."
                  if russian else
-                 "Generation can take a few minutes. The total wait is limited to 4 minutes.")
+                 "Generation can take a few minutes. Follow the timer; there is no need to press the button again.")
         st.caption("Не закрывайте и не обновляйте вкладку. Повторно нажимать кнопку не нужно. "
                    "Ниже отображается время ожидания; при ошибке появится сообщение."
                    if russian else
@@ -602,10 +602,13 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
         faces = selected_faces
     else:
         faces = st.session_state["scene_confirmed_faces"]
+    def queue_scene_creation():
+        st.session_state["scene_resume"] = {"digest": digest, "action": "create"}
+
     resume = st.session_state.get("scene_resume", {})
     busy = resume.get("digest") == digest
     if not versions and (st.button(("Создаём открытку…" if ru else "Creating your card…") if busy else t["create"],
-                                   type="primary", disabled=busy) or
+                                   type="primary", disabled=busy, on_click=queue_scene_creation) or
                          resume == {"digest": digest, "action": "create"}):
         st.session_state["scene_resume"] = {"digest": digest, "action": "create"}
         with generation_status(ru):
