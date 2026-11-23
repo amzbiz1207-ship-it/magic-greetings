@@ -330,7 +330,25 @@ def _request_scene(image, editable, prompt, api_key, reference=None, face_refere
             "Image API failed: HTTP %s, code=%s, request_id=%s",
             response.status_code, code[:80], response.headers.get("x-request-id", "unknown"))
         response.raise_for_status()
-    result = base64.b64decode(response.json()["data"][0]["b64_json"], validate=True)
+    payload = response.json()
+    usage = payload.get("usage") or {}
+    details = usage.get("input_tokens_details") or {}
+    counts = {"text_input_tokens": details.get("text_tokens"),
+              "image_input_tokens": details.get("image_tokens"),
+              "image_output_tokens": usage.get("output_tokens")}
+    if all(type(value) is int and value >= 0 for value in counts.values()):
+        model = os.environ.get("MAGIC_GREETING_IMAGE_MODEL", "gpt-image-2.6-sunburst")
+        progress["token_usage"] = counts
+        # Standard uncached USD estimate; excludes tax/FX and is not an invoice.
+        if model in {"gpt-image-2.6-sunburst", "gpt-image-2.6-flare"}:
+            progress["estimated_standard_cost_usd"] = round(
+                (counts["text_input_tokens"] * 5 + counts["image_input_tokens"] * 8 +
+                 counts["image_output_tokens"] * 30) / 1_000_000, 8)
+            progress["pricing_checked"] = "2026-11-23"
+        LOGGER.info("request[%s] token_usage=%s estimated_standard_cost_usd=%s",
+                    progress.get("ticket", "unknown"), counts,
+                    progress.get("estimated_standard_cost_usd", "unknown"))
+    result = base64.b64decode(payload["data"][0]["b64_json"], validate=True)
     with Image.open(BytesIO(result)) as candidate:
         if candidate.size != image.size:
             raise ValueError("Unexpected image dimensions")
