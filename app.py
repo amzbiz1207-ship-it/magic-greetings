@@ -1223,6 +1223,20 @@ st.markdown('<div id="mg-faq"></div>', unsafe_allow_html=True)
 with st.expander("Вопросы об открытках" if ru else "Questions about your card"):
     st.markdown("**Как это работает?** Выберите сцену, загрузите фото и напишите пожелание.\n\n**Можно написать свой текст?** Да. Надпись можно менять после генерации.\n\n**Сколько ждать?** Создание сцены может занять несколько минут; на экране есть таймер.\n\n**Нужен пароль?** Пока это пробная версия с тестовым доступом.\n\n**Кто на образцах?** Все люди в каталоге вымышленные." if ru else "**How does it work?** Choose a scene, upload a photo and add your greeting.\n\n**Can I write my own message?** Yes. You can edit your greeting after generation.\n\n**How long does it take?** Scene generation can take a few minutes; an elapsed timer is shown.\n\n**Do I need a password?** This preview currently uses trial access.\n\n**Who appears in the examples?** Everyone in the catalogue is fictional.")
 
+
+with st.expander("Если сайт уснул или открытка не появилась" if ru else "If the app is sleeping or your card has not appeared"):
+    st.markdown(
+        "**Спящий смайлик при открытии сайта?** Нажмите голубую кнопку пробуждения (она может называться «Yes, get this app back up!») и дождитесь загрузки. Это экран Streamlit, который появляется до нашего приложения.\n\n"
+        "**Нажали создать открытку?** Проверьте, что появилась надпись о создании и таймер. Не нажимайте повторно и не обновляйте страницу, пока идёт обработка.\n\n"
+        "**Появилась ошибка?** Прочитайте сообщение на экране. Если результата нет, сохраните номер запроса, если он показан, и сообщите об ошибке владельцу сайта.\n\n"
+        "**Как сохранить результат?** Нажмите «Скачать PNG», когда открытка готова. Сохраните её до закрытия страницы: результат и загруженное фото привязаны к текущей сессии."
+        if ru else
+        "**Seeing a sleeping face when opening the app?** Click the blue wake-up button (it may say ‘Yes, get this app back up!’) and wait for the app to load. This is a Streamlit screen shown before our app opens.\n\n"
+        "**Clicked create?** Look for the creation status and elapsed timer. Do not click again or refresh the page while processing is in progress.\n\n"
+        "**Seeing an error?** Read the message on screen. If there is no result, keep the request number if shown and report the error to the site owner.\n\n"
+        "**How do I keep my card?** Click Download PNG when the card is ready. Save it before closing the page: your result and uploaded photo belong to the current session."
+    )
+
 if chosen not in designs:
     st.caption("Чтобы продолжить, нажмите «Выбрать эту сцену» или «Выбрать эту рамку» под картинкой."
                if ru else "To continue, click Choose this scene or Choose this frame below a picture.")
