@@ -489,6 +489,21 @@ def detect_scene_faces(image):
         gray, scaleFactor=1.1, minNeighbors=5, minSize=(55, 55)))
 
 
+
+def detect_result_faces(image, expected_count):
+    # A second cascade rejects false faces in mugs and greeting lettering.
+    scale = min(1.0, 1400 / max(image.size))
+    reduced = image.resize((round(image.width * scale), round(image.height * scale))) if scale < 1 else image
+    gray = cv2.cvtColor(np.asarray(reduced), cv2.COLOR_RGB2GRAY)
+    detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_alt2.xml")
+    for pixels in (gray, cv2.equalizeHist(gray)):
+        detected = detector.detectMultiScale(pixels, scaleFactor=1.05, minNeighbors=5, minSize=(55, 55))
+        boxes = sorted(tuple(round(int(value) / scale) for value in box) for box in detected)
+        if len(boxes) == expected_count:
+            return boxes
+    return detect_scene_faces(image)
+
+
 def portrait_source_faces(image):
     faces = detect_scene_faces(image)
     if not faces:
@@ -682,7 +697,7 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
         LOGGER.info("rendered scene version; scene=%s size=%sx%s", scene, result.width, result.height)
         st.session_state.pop("scene_resume", None)
         st.session_state["scene_original_faces"] = list(faces)
-        st.session_state["scene_confirmed_faces"] = detect_scene_faces(result) if not royal else faces
+        st.session_state["scene_confirmed_faces"] = detect_result_faces(result, len(faces)) if not royal else faces
         versions.append(result)
         st.session_state["scene_saved"][digest] = {
             "versions": versions, "faces": st.session_state["scene_confirmed_faces"],
@@ -699,6 +714,8 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                            index=len(versions) - 1, format_func=lambda value: str(value + 1),
                            key=f"scene_version_{digest}_{len(versions)}")
     current = versions[version]
+    if not royal:
+        faces = detect_result_faces(current, len(st.session_state["scene_original_faces"]))
     can_refine = (len(faces) == len(st.session_state["scene_original_faces"])
                   and bool(faces))
     if can_refine and len(versions) < 4:
