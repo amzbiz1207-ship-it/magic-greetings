@@ -46,6 +46,9 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 ROOT = Path(__file__).resolve().parent
 W, H = 1080, 1350
 MAX_BYTES = 15 * 1024 * 1024
+MIN_PHOTO_SIDE = 1000
+MIN_FACE_SIDE = 150
+MAX_SCENE_REFINEMENTS = 1
 Image.MAX_IMAGE_PIXELS = 20_000_000
 TEMPLATES = json.loads((ROOT / "templates.json").read_text())
 THEMES = {item["id"]: item for item in TEMPLATES}
@@ -95,7 +98,7 @@ def face_detector():
 def inspect(photo, category="universal"):
     """Conservative initial heuristics. Manual preview remains essential."""
     issues = []
-    if min(photo.size) < 600:
+    if min(photo.size) < MIN_PHOTO_SIDE:
         issues.append("resolution")
     scale = min(1, 1000 / max(photo.size))
     reduced = photo.resize((round(photo.width * scale), round(photo.height * scale)))
@@ -115,7 +118,7 @@ def inspect(photo, category="universal"):
             issues.append("face_missing")
         elif portrait and len(faces) != 1:
             issues.append("face_count")
-        elif min(min(w, h) / scale for x, y, w, h in faces) < 100:
+        elif min(min(w, h) / scale for x, y, w, h in faces) < MIN_FACE_SIDE:
             issues.append("face_small")
         elif any(cv2.Laplacian(gray[y:y+h, x:x+w], cv2.CV_64F).var() < 20
                  for x, y, w, h in faces):
@@ -573,19 +576,14 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
     faces = st.session_state["scene_faces"]
     versions = st.session_state["scene_versions"]
     issues = set(st.session_state["scene_issues"])
-    # A small but sharp source with detectable faces can proceed with an honest advisory.
-    if issues == {"resolution"} and min(photo.size) >= 400 and faces:
-        st.warning("Фото небольшое: для лучшего сходства рекомендуем оригинал от 600 пикселей по короткой стороне. Можно продолжить с этим снимком." if ru else
-                   "This photo is small. For better likeness, use an original at least 600 pixels on its shortest side. You can continue with this photo.")
-        issues = set()
     if issues or not faces:
         reasons = []
         if issues & {"blur", "face_blur"}:
             reasons.append("снимок или лицо недостаточно резкие" if ru else
                            "the photo or a face is not sharp enough")
         if "resolution" in issues:
-            reasons.append("слишком маленький размер снимка" if ru else
-                           "the image resolution is too low")
+            reasons.append("короткая сторона фото должна быть не меньше 1000 пикселей" if ru else
+                           "the shortest image side must be at least 1000 pixels")
         if "light" in issues:
             reasons.append("снимок слишком тёмный или пересвечен" if ru else
                            "the photo is too dark or overexposed")
@@ -593,8 +591,8 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
             reasons.append("не удалось уверенно найти лица" if ru else
                            "faces could not be detected reliably")
         if "face_small" in issues:
-            reasons.append("лица слишком мелкие на снимке" if ru else
-                           "faces are too small in the photo")
+            reasons.append("лицо слишком мелкое: нужно минимум 150 пикселей по ширине и высоте" if ru else
+                           "a face is too small: at least 150 pixels in width and height are required")
         if "face_count" in issues:
             reasons.append("проверьте количество людей на снимке" if ru else
                            "check the number of people in the photo")
@@ -736,7 +734,7 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
         faces = detect_result_faces(current, len(st.session_state["scene_original_faces"]))
     can_refine = (len(faces) == len(st.session_state["scene_original_faces"])
                   and bool(faces))
-    if can_refine and len(versions) < 4:
+    if can_refine and len(versions) < 1 + MAX_SCENE_REFINEMENTS:
         with st.expander("Поправить одно лицо" if ru else "Refine one face"):
             choices = []
             for index, (x, y, w, h) in enumerate(faces):
@@ -771,8 +769,8 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                 st.session_state.pop("scene_resume", None)
                 st.rerun()
     if can_refine:
-        st.caption(f"Корректировок осталось: {4-len(versions)}" if ru else
-                   f"Refinements left: {4-len(versions)}")
+        st.caption(f"Корректировок осталось: {max(0, 1 + MAX_SCENE_REFINEMENTS - len(versions))}" if ru else
+                   f"Refinements left: {max(0, 1 + MAX_SCENE_REFINEMENTS - len(versions))}")
     else:
         st.caption("Локальная правка доступна, когда в результате найдены оба лица." if ru else
                    "Local refinements require both faces to be detected in the result.")
@@ -1242,10 +1240,65 @@ scene_authorized = not scene_mode
 st.subheader("2. Загрузите фотографию" if ru else "2. Upload your photo")
 st.caption("Нажмите «Upload» («Загрузить») в светлом блоке ниже. Форматы JPG, PNG или WEBP, до 15 МБ."
            if ru else "Click Upload in the light box below. JPG, PNG or WEBP, up to 15 MB.")
+if scene_mode:
+    requirements = (
+        "<strong>Требования к фотографии — прочитайте до загрузки</strong>"
+        "<ul><li>Загрузите исходное фото JPG, PNG или WEBP: до 15 МБ и 20 мегапикселей.</li>"
+        "<li>Короткая сторона — минимум <strong>1000 пикселей</strong>. Лучше оригинал с камеры, а не скриншот.</li>"
+        "<li>Каждое лицо — минимум <strong>150 × 150 пикселей</strong>; для лучшего сходства желательно 250 × 250 и больше.</li>"
+        "<li>Лица резкие, хорошо освещены, полностью видны. Без сильного поворота, закрытых глаз, масок и тёмных очков.</li>"
+        "<li>Без фильтров красоты, сильной ретуши, размытия и пересвета. Для группы все лица должны быть чёткими.</li>"
+        "<li>Для ярмарки — ровно два человека; для бархатного портрета — один; для остальных сцен — от одного до пяти.</li></ul>"
+        "<strong>Включено одно исправление на открытку.</strong> Проверка фотографии выполняется до платной генерации. "
+        "Хорошее фото повышает сходство; автоматическая проверка не гарантирует идеального результата."
+        if ru else
+        "<strong>Photo requirements — please read before uploading</strong>"
+        "<ul><li>Upload an original JPG, PNG or WEBP: up to 15 MB and 20 megapixels.</li>"
+        "<li>Shortest side: at least <strong>1000 pixels</strong>. Prefer the camera original, not a screenshot.</li>"
+        "<li>Every face: at least <strong>150 × 150 pixels</strong>; 250 × 250 or more is recommended for better likeness.</li>"
+        "<li>Faces must be sharp, evenly lit and fully visible. Avoid strong side angles, closed eyes, masks and sunglasses.</li>"
+        "<li>No beauty filters, heavy retouching, blur or overexposure. Every face in a group should be clear.</li>"
+        "<li>Christmas Market: exactly two people. Velvet Portrait: one person. Other scenes: one to five people.</li></ul>"
+        "<strong>One refinement is included per card.</strong> Your photo is checked before paid generation. "
+        "A good photo improves likeness; automatic checks cannot guarantee a perfect result."
+    )
+    st.markdown('<div role="note" aria-label="Photo requirements" style="border:2px solid #a63f3f;'
+                'border-left:7px solid #a63f3f;border-radius:12px;background:#fff3ed;color:#562525;'
+                'padding:18px 22px;margin:12px 0 18px;font-size:16px;line-height:1.6">' + requirements + '</div>',
+                unsafe_allow_html=True)
 revision = st.session_state.get("upload_revision", 0)
 uploaded = st.file_uploader("Ваша фотография" if ru else "Your photo",
                             type=["jpg", "jpeg", "png", "webp"],
                             key=f"upload_{revision}", max_upload_size=15)
+if scene_mode and uploaded:
+    try:
+        source_data = uploaded.getvalue()
+        source_digest = hashlib.sha256(source_data).hexdigest()
+        if st.session_state.get("photo_digest") != source_digest:
+            st.session_state["photo_image"] = load_photo(source_data)
+            st.session_state["photo_digest"] = source_digest
+        preflight_photo = st.session_state["photo_image"]
+        preflight_issues, _ = inspect(preflight_photo, "family")
+        if preflight_issues:
+            explanations = {
+                "resolution": ("короткая сторона меньше 1000 пикселей", "shortest side is below 1000 pixels"),
+                "face_small": ("лицо меньше 150 × 150 пикселей", "a face is smaller than 150 × 150 pixels"),
+                "face_missing": ("лица не распознаны уверенно", "faces could not be detected reliably"),
+                "blur": ("фотография размыта", "the photo is blurred"),
+                "face_blur": ("одно из лиц размыто", "a face is blurred"),
+                "light": ("фото слишком тёмное или пересвечено", "the photo is too dark or overexposed")}
+            reasons = "; ".join(explanations.get(issue, ("проверьте фото", "check the photo"))[0 if ru else 1]
+                                for issue in dict.fromkeys(preflight_issues))
+            st.error(("Замените фотографию: " if ru else "Please replace this photo: ") + reasons +
+                     (". Генерация не запускалась, платный запрос не отправлялся." if ru else
+                      ". Generation has not started; no paid request was sent."))
+            st.stop()
+        st.success("Фото прошло автоматическую проверку качества. Проверьте также требования выше." if ru else
+                   "Photo passed the automatic quality checks. Please also check the requirements above.")
+    except PhotoError as error:
+        st.error(("Не удалось загрузить фото. Проверьте формат, размер до 15 МБ и не более 20 мегапикселей." if ru else
+                  "Unable to load this photo. Check the format, 15 MB file limit and 20 megapixel limit."))
+        st.stop()
 if scene_mode:
     st.caption("Загрузка и текст доступны сразу. Тестовый пароль нужен только для запуска генерации."
                if ru else "You can upload and edit your message now. The test password is needed only to generate.")
