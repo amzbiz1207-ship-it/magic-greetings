@@ -56,3 +56,13 @@
 Генератор подготовлен для размещения и пользовательской проверки. Оплата, учёт покупателей, выдача доступа, ограничение числа заказов и контроль нагрузки пока не подключены. Не размещайте платёжные секреты в репозитории.
 
 Для подключения продаж нужно выбрать схему доступа. Простая ссылка после оплаты может быть передана другим людям. Для персонального доступа потребуются учёт покупателя и проверка оплаченного заказа на сервере. Платёжная интеграция будет отдельным этапом после проверки генератора на размещённом сайте.
+
+## Before the buyer opens the app
+
+Place this note in the purchase email or Gumroad access instructions, immediately above the app link.
+
+**IMPORTANT — before opening Magic Greetings**
+If you see a sleeping face, click **Yes, get this app back up!** and wait for Magic Greetings to load.
+
+**ВАЖНО — перед открытием Magic Greetings**
+Если появится спящий смайлик, нажмите **Yes, get this app back up!** и дождитесь загрузки Magic Greetings.
