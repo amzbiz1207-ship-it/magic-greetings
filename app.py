@@ -3,6 +3,7 @@ from io import BytesIO
 from contextlib import contextmanager
 from concurrent.futures import ThreadPoolExecutor
 import os
+import sqlite3
 import logging
 
 LOGGER = logging.getLogger("magic_greetings")
@@ -24,6 +25,8 @@ import hmac
 import json
 
 import streamlit as st
+from gumroad_license import LicenseUnavailable, verify_license
+from purchase_credits import PurchaseCredits
 from fontTools.ttLib import TTFont
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
@@ -45,11 +48,13 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 ROOT = Path(__file__).resolve().parent
 W, H = 1080, 1350
-MAX_BYTES = 15 * 1024 * 1024
+MAX_UPLOAD_MB = 30
+MAX_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+MAX_PHOTO_PIXELS = 50_000_000
 MIN_PHOTO_SIDE = 1000
 MIN_FACE_SIDE = 150
 MAX_SCENE_REFINEMENTS = 1
-Image.MAX_IMAGE_PIXELS = 20_000_000
+Image.MAX_IMAGE_PIXELS = MAX_PHOTO_PIXELS
 TEMPLATES = json.loads((ROOT / "templates.json").read_text())
 THEMES = {item["id"]: item for item in TEMPLATES}
 FONT_DIR = Path("/usr/share/fonts/truetype/dejavu")
@@ -66,7 +71,7 @@ def load_photo(data):
         with Image.open(io.BytesIO(data)) as source:
             if source.format not in {"JPEG", "PNG", "WEBP"}:
                 raise PhotoError("format")
-            if source.width * source.height > 20_000_000:
+            if source.width * source.height > MAX_PHOTO_PIXELS:
                 raise PhotoError("pixels")
             source.load()
             oriented = ImageOps.exif_transpose(source)
@@ -370,7 +375,31 @@ def scene_request_pool():
     return st.session_state["scene_executor"]
 
 
-def edit_scene(image, editable, prompt, api_key, reference=None, face_reference=None):
+def run_purchased_scene(arguments, progress, purchase, card_id, refinement):
+    ledger, product, key, sale = purchase
+    if verify_license(product, key) != sale:
+        raise ValueError("The licence is no longer valid.")
+    attempt = uuid.uuid4().hex
+    if refinement:
+        reserved = ledger.reserve_refinement(sale, card_id, attempt)
+    else:
+        reserved = ledger.reserve(sale, card_id)
+    if not reserved:
+        raise ValueError("No credit is available for this operation.")
+    succeeded = False
+    try:
+        result = _request_scene(*arguments, progress=progress)
+        succeeded = True
+        return result
+    finally:
+        if refinement:
+            ledger.settle_refinement(sale, card_id, attempt, succeeded)
+        else:
+            ledger.settle(sale, card_id, succeeded)
+
+
+def edit_scene(image, editable, prompt, api_key, reference=None, face_reference=None,
+               purchase=None, card_id=None, refinement=False):
     fingerprint = hashlib.sha256(prompt.encode())
     for source in (image, editable, reference, face_reference):
         if source is not None:
@@ -386,10 +415,14 @@ def edit_scene(image, editable, prompt, api_key, reference=None, face_reference=
     if pending is None:
         progress = {"stage": "queued", "ticket": uuid.uuid4().hex[:10]}
         LOGGER.info("request[%s] accepted", progress["ticket"])
-        future = scene_request_pool().submit(
-            _request_scene, image.copy(), editable.copy() if editable is not None else None,
-            prompt, api_key, reference.copy() if reference is not None else None,
-            face_reference.copy() if face_reference is not None else None, progress=progress)
+        arguments = (image.copy(), editable.copy() if editable is not None else None,
+                     prompt, api_key, reference.copy() if reference is not None else None,
+                     face_reference.copy() if face_reference is not None else None)
+        executor = scene_request_pool()
+        if purchase:
+            future = executor.submit(run_purchased_scene, arguments, progress, purchase, card_id, refinement)
+        else:
+            future = executor.submit(_request_scene, *arguments, progress=progress)
         pending = {"signature": signature, "future": future,
                    "started": time.monotonic(), "ticket": progress["ticket"], "progress": progress}
         st.session_state["scene_pending_request"] = pending
@@ -480,8 +513,17 @@ def scene_input(photo, market=False):
     fitted = ImageOps.contain(photo, (round(size[0] * .66), round(size[1] * .62)),
                               Image.Resampling.LANCZOS)
     canvas = Image.new("RGB", size, "#263229")
-    canvas.paste(fitted, ((size[0] - fitted.width) // 2, round(size[1] * .05)))
-    return canvas
+    left = (size[0] - fitted.width) // 2
+    top = round(size[1] * .05)
+    canvas.paste(fitted, (left, top))
+    scale_x = fitted.width / photo.width
+    scale_y = fitted.height / photo.height
+    faces = [
+        (left + round(x * scale_x), top + round(y * scale_y),
+         max(1, round(w * scale_x)), max(1, round(h * scale_y)))
+        for x, y, w, h in detect_scene_faces(photo, min_side=30)
+    ]
+    return canvas, faces
 
 
 def scene_editable(size, faces, selected=None):
@@ -502,12 +544,12 @@ def scene_editable(size, faces, selected=None):
     return editable
 
 
-def detect_scene_faces(image):
+def detect_scene_faces(image, min_side=55):
     scale = min(1.0, 1400 / max(image.size))
     reduced = image.resize((round(image.width * scale), round(image.height * scale))) if scale < 1 else image
     gray = cv2.cvtColor(np.asarray(reduced), cv2.COLOR_RGB2GRAY)
     return sorted(tuple(round(int(value) / scale) for value in face) for face in face_detector().detectMultiScale(
-        gray, scaleFactor=1.1, minNeighbors=5, minSize=(55, 55)))
+        gray, scaleFactor=1.1, minNeighbors=5, minSize=(min_side, min_side)))
 
 
 
@@ -549,7 +591,7 @@ def select_design(design_id):
     st.session_state["selection_notice"] = True
 
 
-def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
+def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t, purchase=None):
     ru = lang == "ru"
     market = scene == "market"
     royal = scene == "royal"
@@ -557,10 +599,14 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
         st.button(t["create"], type="primary", disabled=True, key="scene_prerequisite")
     digest = f"{digest}_{scene}_identity_v3"
     if st.session_state.get("scene_digest") != digest:
-        canvas = royal_template_image() if royal else scene_input(photo, market)
-        faces = [(260, 165, 240, 255)] if royal else detect_scene_faces(canvas)
+        if royal:
+            canvas = royal_template_image()
+            faces = [(260, 165, 240, 255)]
+        else:
+            canvas, faces = scene_input(photo, market)
         source_faces = portrait_source_faces(photo) if royal else []
-        issues, _ = inspect(photo, "universal" if royal else "family")
+        issues, _ = inspect(photo)
+        issues = [issue for issue in issues if issue != "resolution"]
         if royal and len(source_faces) != 1:
             st.warning("Для этого портрета загрузите фото с одним хорошо видимым лицом." if ru else
                        "Upload a photo with one clearly visible face for this portrait.")
@@ -578,24 +624,14 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
     issues = set(st.session_state["scene_issues"])
     if issues or not faces:
         reasons = []
-        if issues & {"blur", "face_blur"}:
-            reasons.append("снимок или лицо недостаточно резкие" if ru else
-                           "the photo or a face is not sharp enough")
-        if "resolution" in issues:
-            reasons.append("короткая сторона фото должна быть не меньше 1000 пикселей" if ru else
-                           "the shortest image side must be at least 1000 pixels")
+        if "blur" in issues:
+            reasons.append("снимок недостаточно резкий" if ru else "the photo is not sharp enough")
         if "light" in issues:
             reasons.append("снимок слишком тёмный или пересвечен" if ru else
                            "the photo is too dark or overexposed")
-        if "face_missing" in issues or not faces:
-            reasons.append("не удалось уверенно найти лица" if ru else
-                           "faces could not be detected reliably")
-        if "face_small" in issues:
-            reasons.append("лицо слишком мелкое: нужно минимум 150 пикселей по ширине и высоте" if ru else
-                           "a face is too small: at least 150 pixels in width and height are required")
-        if "face_count" in issues:
-            reasons.append("проверьте количество людей на снимке" if ru else
-                           "check the number of people in the photo")
+        if not faces:
+            reasons.append("не удалось уверенно найти лица. Попробуйте фото, сделанное ближе, где хорошо видно каждое лицо" if ru else
+                           "no faces were detected confidently. Try a photo taken closer, with every face clearly visible")
         details = "; ".join(reasons) or ("проверьте качество фото" if ru else "check the photo quality")
         st.warning(("**Генерация ещё не началась.** Нужно заменить фото: " + details +
                     ". Загрузите более чёткий оригинал в блоке «2. Загрузите фотографию» выше. "
@@ -607,7 +643,22 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
         blocked_create()
         return
     if not versions:
-        st.markdown("**Проверьте найденные лица**" if ru else "**Check detected faces**")
+        expected_count = None
+        if scene in {"fireplace", "chalet"}:
+            expected_count = st.selectbox(
+                "Сколько человек должно быть на открытке?" if ru else "How many people should be on the card?",
+                range(1, 6), index=None, key=f"scene_people_{digest}",
+                placeholder="Выберите количество" if ru else "Choose a number",
+            )
+        st.markdown("**Проверьте, что сайт нашёл всех**" if ru else "**Check that everyone was found**")
+        if not royal:
+            st.caption(
+                "Если на фото четверо, а сайт показывает только три лица, попробуйте другое фото, "
+                "где все четверо сняты чуть ближе и их лица хорошо видны."
+                if ru else
+                "If there are four people in your photo and you only see three faces, try another photo "
+                "taken a little closer, with all four faces clearly visible."
+            )
         st.caption("Снимите галочку с лишних отметок." if ru else "Uncheck any false detections.")
         selected_faces = []
         columns = st.columns(min(5, len(faces)))
@@ -630,6 +681,20 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
             st.warning("Выберите от одного до пяти лиц." if ru else "Select one to five faces.")
             blocked_create()
             return
+        if scene in {"fireplace", "chalet"}:
+            if expected_count is None:
+                blocked_create()
+                return
+            if len(selected_faces) != expected_count:
+                st.warning(
+                    f"Вы указали {expected_count}, отмечено лиц: {len(selected_faces)}. "
+                    "Если кого-то не видно, загрузите более чёткое фото, сделанное ближе."
+                    if ru else
+                    f"You selected {expected_count} people. Faces checked: {len(selected_faces)}. "
+                    "If someone is missing, upload a clearer photo taken closer."
+                )
+                blocked_create()
+                return
         faces = selected_faces
     else:
         faces = st.session_state["scene_confirmed_faces"]
@@ -642,6 +707,9 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                                    type="primary", disabled=busy, on_click=queue_scene_creation) or
                          resume == {"digest": digest, "action": "create"}):
         st.session_state["scene_resume"] = {"digest": digest, "action": "create"}
+        card_ids = st.session_state.setdefault("scene_card_ids", {})
+        if not st.session_state.get("scene_pending_request"):
+            card_ids[digest] = uuid.uuid4().hex
         with generation_status(ru):
             if royal:
                 prompt = (
@@ -713,7 +781,8 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                     "Do not draw a separate banner, frame, panel or text."
                 )
                 edit_mask = None
-            result = edit_scene(canvas, edit_mask, prompt, api_key, reference=photo)
+            result = edit_scene(canvas, edit_mask, prompt, api_key, reference=photo,
+                                purchase=purchase, card_id=card_ids.get(digest))
         LOGGER.info("rendered scene version; scene=%s size=%sx%s", scene, result.width, result.height)
         st.session_state.pop("scene_resume", None)
         st.session_state["scene_original_faces"] = list(faces)
@@ -769,7 +838,8 @@ def scene_editor(photo, digest, scene, lang, title, message, name, api_key, t):
                         "Use those originals as the identity reference. Preserve the first image's "
                         "composition and other people. Restore the person's original facial features "
                         "and expression. Apply this localized request only: " + note,
-                        api_key, reference=photo, face_reference=face_reference))
+                        api_key, reference=photo, face_reference=face_reference, purchase=purchase,
+                        card_id=st.session_state.get("scene_card_ids", {}).get(digest), refinement=True))
                 st.session_state.pop("scene_resume", None)
                 st.rerun()
     if can_refine:
@@ -1090,21 +1160,6 @@ ru = lang == "ru"
 st.markdown('<div id="mg-scenes" class="mg-section-title">' + ("Выберите праздничную сцену" if ru else "Choose a Template") + '</div>', unsafe_allow_html=True)
 st.markdown('<p class="mg-section-note">' + ("Выберите картинку ниже, затем добавьте своё фото и поздравление." if ru else "Choose your favourite scene, then add your photo and a heartfelt greeting.") + '</p>', unsafe_allow_html=True)
 
-# Keep wake-up guidance visible rather than hidden in the FAQ.
-wake_title = "ВАЖНО — прочитайте перед началом" if ru else "IMPORTANT — please read before you start"
-wake_body = ("Если при открытии ссылки вы увидите спящий смайлик, нажмите голубую кнопку "
-             "«Yes, get this app back up!» (или другую кнопку пробуждения) и дождитесь загрузки. "
-             "Это означает, что приложение Streamlit уснуло, а не сломалось."
-             if ru else
-             "If you see a sleeping face when opening this link, click the blue "
-             "‘Yes, get this app back up!’ button (or the wake-up button shown) and wait for the app to load. "
-             "This means the Streamlit app is asleep, not broken.")
-st.markdown('<aside role="note" aria-label="Important — please read" style="background:#fff4db;'
-            'border:2px solid #b78b38;border-left:7px solid #b78b38;border-radius:14px;'
-            'padding:16px 20px;margin:12px 0 24px;color:#45351b;line-height:1.6">'
-            '<strong style="display:block;font-size:18px;color:#795018;margin-bottom:6px">'
-            + wake_title + '</strong>' + wake_body + '</aside>', unsafe_allow_html=True)
-
 # Quick visual choices use the existing, working scene identifiers.
 quick_scenes = [("royal", "Роскошный портрет", "Velvet Christmas Portrait"), ("snow", "Для него", "For Him"),
                 ("market", "Для двоих", "For Two"), ("fireplace", "Для семьи", "For Family"),
@@ -1132,7 +1187,7 @@ if st.session_state.get("chosen_design"):
                 '{border:3px solid #27744e!important;box-shadow:0 0 0 3px #27744e22!important}</style>', unsafe_allow_html=True)
 
 api_key = runtime_setting("OPENAI_API_KEY").strip()
-preview_password = runtime_setting("MAGIC_GREETING_TEST_PASSWORD")
+preview_password = runtime_setting("MAGIC_GREETING_TEST_PASSWORD").strip()
 designs = {
     "royal": {
         "title": "Роскошный рождественский портрет" if ru else "Velvet Christmas Portrait",
@@ -1258,14 +1313,12 @@ with st.expander("Вопросы об открытках" if ru else "Questions 
     st.markdown("**Как это работает?** Выберите сцену, загрузите фото и напишите пожелание.\n\n**Можно написать свой текст?** Да. Надпись можно менять после генерации.\n\n**Сколько ждать?** Создание сцены может занять несколько минут; на экране есть таймер.\n\n**Нужен пароль?** Пока это пробная версия с тестовым доступом.\n\n**Кто на образцах?** Все люди в каталоге вымышленные." if ru else "**How does it work?** Choose a scene, upload a photo and add your greeting.\n\n**Can I write my own message?** Yes. You can edit your greeting after generation.\n\n**How long does it take?** Scene generation can take a few minutes; an elapsed timer is shown.\n\n**Do I need a password?** This preview currently uses trial access.\n\n**Who appears in the examples?** Everyone in the catalogue is fictional.")
 
 
-with st.expander("Если сайт уснул или открытка не появилась" if ru else "If the app is sleeping or your card has not appeared"):
+with st.expander("Если открытка не появилась" if ru else "If your card has not appeared"):
     st.markdown(
-        "**Спящий смайлик при открытии сайта?** Нажмите голубую кнопку пробуждения (она может называться «Yes, get this app back up!») и дождитесь загрузки. Это экран Streamlit, который появляется до нашего приложения.\n\n"
         "**Нажали создать открытку?** Проверьте, что появилась надпись о создании и таймер. Не нажимайте повторно и не обновляйте страницу, пока идёт обработка.\n\n"
         "**Появилась ошибка?** Прочитайте сообщение на экране. Если результата нет, сохраните номер запроса, если он показан, и сообщите об ошибке владельцу сайта.\n\n"
         "**Как сохранить результат?** Нажмите «Скачать PNG», когда открытка готова. Сохраните её до закрытия страницы: результат и загруженное фото привязаны к текущей сессии."
         if ru else
-        "**Seeing a sleeping face when opening the app?** Click the blue wake-up button (it may say ‘Yes, get this app back up!’) and wait for the app to load. This is a Streamlit screen shown before our app opens.\n\n"
         "**Clicked create?** Look for the creation status and elapsed timer. Do not click again or refresh the page while processing is in progress.\n\n"
         "**Seeing an error?** Read the message on screen. If there is no result, keep the request number if shown and report the error to the site owner.\n\n"
         "**How do I keep my card?** Click Download PNG when the card is ready. Save it before closing the page: your result and uploaded photo belong to the current session."
@@ -1283,110 +1336,85 @@ original = scene_mode
 selected = "winter" if chosen == "frame_winter" else "gold"
 category = "all"
 card_format = "static"
-scene_available = bool(api_key and preview_password)
+gumroad_product = runtime_setting("MAGIC_GUMROAD_PRODUCT_ID").strip()
+credit_path = runtime_setting("MAGIC_CREDIT_DB_PATH").strip()
+purchase = None
+scene_available = bool(api_key and (credit_path if gumroad_product else preview_password))
 scene_authorized = not scene_mode
 st.subheader("2. Загрузите фотографию" if ru else "2. Upload your photo")
-st.caption("Нажмите «Upload» («Загрузить») в светлом блоке ниже. Форматы JPG, PNG или WEBP, до 15 МБ."
-           if ru else "Click Upload in the light box below. JPG, PNG or WEBP, up to 15 MB.")
+st.caption(f"Форматы JPG, PNG или WEBP, до {MAX_UPLOAD_MB} МБ." if ru else
+           f"JPG, PNG or WEBP, up to {MAX_UPLOAD_MB} MB.")
 if scene_mode:
-    requirements = (
-        "<strong>Требования к фотографии — прочитайте до загрузки</strong>"
-        "<ul><li>Загрузите исходное фото JPG, PNG или WEBP: до 15 МБ и 20 мегапикселей.</li>"
-        "<li>Короткая сторона — минимум <strong>1000 пикселей</strong>. Лучше оригинал с камеры, а не скриншот.</li>"
-        "<li>Каждое лицо — минимум <strong>150 × 150 пикселей</strong>; для лучшего сходства желательно 250 × 250 и больше.</li>"
-        "<li>Лица резкие, хорошо освещены, полностью видны. Без сильного поворота, закрытых глаз, масок и тёмных очков.</li>"
-        "<li>Без фильтров красоты, сильной ретуши, размытия и пересвета. Для группы все лица должны быть чёткими.</li>"
-        "<li>Для ярмарки — ровно два человека; для бархатного портрета — один; для остальных сцен — от одного до пяти.</li></ul>"
-        "<strong>Включено одно исправление на открытку.</strong> Проверка фотографии выполняется до платной генерации. "
-        "Хорошее фото повышает сходство; автоматическая проверка не гарантирует идеального результата."
+    st.info(
+        "Загрузите чёткое фото, на котором видны все лица. Семейное фото можно загрузить целиком. "
+        "Для ярмарки нужны два человека, для бархатного портрета — один, для остальных сцен — от одного до пяти."
         if ru else
-        "<strong>Photo requirements — please read before uploading</strong>"
-        "<ul><li>Upload an original JPG, PNG or WEBP: up to 15 MB and 20 megapixels.</li>"
-        "<li>Shortest side: at least <strong>1000 pixels</strong>. Prefer the camera original, not a screenshot.</li>"
-        "<li>Every face: at least <strong>150 × 150 pixels</strong>; 250 × 250 or more is recommended for better likeness.</li>"
-        "<li>Faces must be sharp, evenly lit and fully visible. Avoid strong side angles, closed eyes, masks and sunglasses.</li>"
-        "<li>No beauty filters, heavy retouching, blur or overexposure. Every face in a group should be clear.</li>"
-        "<li>Christmas Market: exactly two people. Velvet Portrait: one person. Other scenes: one to five people.</li></ul>"
-        "<strong>One refinement is included per card.</strong> Your photo is checked before paid generation. "
-        "A good photo improves likeness; automatic checks cannot guarantee a perfect result."
+        "Upload a sharp photo with all faces visible. You can upload a full family photo. "
+        "Christmas Market takes two people, Velvet Portrait takes one, and other scenes take one to five."
     )
-    st.markdown('<div role="note" aria-label="Photo requirements" style="border:2px solid #a63f3f;'
-                'border-left:7px solid #a63f3f;border-radius:12px;background:#fff3ed;color:#562525;'
-                'padding:18px 22px;margin:12px 0 18px;font-size:16px;line-height:1.6">' + requirements + '</div>',
-                unsafe_allow_html=True)
 revision = st.session_state.get("upload_revision", 0)
 uploaded = st.file_uploader("Ваша фотография" if ru else "Your photo",
                             type=["jpg", "jpeg", "png", "webp"],
-                            key=f"upload_{revision}", max_upload_size=15)
-if scene_mode and uploaded:
-    try:
-        source_data = uploaded.getvalue()
-        source_digest = hashlib.sha256(source_data).hexdigest()
-        if st.session_state.get("photo_digest") != source_digest:
-            st.session_state["photo_image"] = load_photo(source_data)
-            st.session_state["photo_digest"] = source_digest
-        preflight_photo = st.session_state["photo_image"]
-        preflight_issues, _ = inspect(preflight_photo, "family")
-        if preflight_issues:
-            explanations = {
-                "resolution": ("короткая сторона меньше 1000 пикселей", "shortest side is below 1000 pixels"),
-                "face_small": ("лицо меньше 150 × 150 пикселей", "a face is smaller than 150 × 150 pixels"),
-                "face_missing": ("лица не распознаны уверенно", "faces could not be detected reliably"),
-                "blur": ("фотография размыта", "the photo is blurred"),
-                "face_blur": ("одно из лиц размыто", "a face is blurred"),
-                "light": ("фото слишком тёмное или пересвечено", "the photo is too dark or overexposed")}
-            reasons = "; ".join(explanations.get(issue, ("проверьте фото", "check the photo"))[0 if ru else 1]
-                                for issue in dict.fromkeys(preflight_issues))
-            st.error(("Замените фотографию: " if ru else "Please replace this photo: ") + reasons +
-                     (". Генерация не запускалась, платный запрос не отправлялся." if ru else
-                      ". Generation has not started; no paid request was sent."))
-            st.stop()
-        st.success("Фото прошло автоматическую проверку качества. Проверьте также требования выше." if ru else
-                   "Photo passed the automatic quality checks. Please also check the requirements above.")
-    except PhotoError as error:
-        st.error(("Не удалось загрузить фото. Проверьте формат, размер до 15 МБ и не более 20 мегапикселей." if ru else
-                  "Unable to load this photo. Check the format, 15 MB file limit and 20 megapixel limit."))
-        st.stop()
-if scene_mode:
+                            key=f"upload_{revision}", max_upload_size=MAX_UPLOAD_MB)
+if scene_mode and gumroad_product:
+    if scene_available:
+        if "gumroad_order" not in st.session_state:
+            with st.form("gumroad_activation", clear_on_submit=True):
+                licence = st.text_input("Ключ Gumroad" if ru else "Gumroad licence key", type="password")
+                activate = st.form_submit_button("Активировать" if ru else "Activate pack")
+            if activate:
+                try:
+                    order = verify_license(gumroad_product, licence)
+                    if order:
+                        PurchaseCredits(credit_path).activate(order)
+                        st.session_state["gumroad_order"] = (licence, order)
+                        st.rerun()
+                    st.error("Ключ не принят." if ru else "This licence was not accepted.")
+                except (LicenseUnavailable, OSError, sqlite3.Error):
+                    st.error("Активация временно недоступна." if ru else "Activation is temporarily unavailable.")
+        else:
+            licence, order = st.session_state["gumroad_order"]
+            try:
+                ledger = PurchaseCredits(credit_path)
+                balance = ledger.activate(order)
+                purchase = (ledger, gumroad_product, licence, order)
+                scene_authorized = True
+                st.info(f"Открыток осталось: {balance}" if ru else f"Cards remaining: {balance}")
+            except (OSError, sqlite3.Error):
+                st.error("Баланс временно недоступен." if ru else "Your balance is temporarily unavailable.")
+    else:
+        st.warning("Активация временно недоступна." if ru else "Activation is temporarily unavailable.")
+elif scene_mode:
     st.caption("Загрузка и текст доступны сразу. Тестовый пароль нужен только для запуска генерации."
                if ru else "You can upload and edit your message now. The test password is needed only to generate.")
     if scene_available:
-        access_confirmed = hmac.compare_digest(
-            str(st.session_state.get("scene_access", "")).encode(), preview_password.encode())
-        with st.form("trial_access_form", clear_on_submit=False):
-            supplied = st.text_input("Пароль для пробной генерации" if ru else
-                                     "Password for trial generation",
-                                     type="password", key="scene_access",
-                                     help="Введите пароль и нажмите кнопку подтверждения ниже." if ru else
-                                          "Enter your password and click the confirmation button below.")
-            unlock = st.form_submit_button(
-                ("✓ Доступ открыт" if ru else "✓ Access confirmed") if access_confirmed else
-                ("Подтвердить пароль" if ru else "Confirm password"),
-                disabled=access_confirmed, type="primary")
-        with st.spinner("Проверяем пароль…" if ru else "Checking password…"):
-            scene_authorized = hmac.compare_digest(supplied.encode(), preview_password.encode())
-        if unlock and scene_authorized:
-            st.rerun()
+        scene_authorized = st.session_state.get("trial_access_confirmed", False)
+        if not scene_authorized:
+            with st.form("trial_access_form", clear_on_submit=True):
+                supplied = st.text_input("Пароль для пробной генерации" if ru else
+                                         "Password for trial generation", type="password")
+                unlock = st.form_submit_button("Подтвердить пароль" if ru else
+                                               "Confirm password", type="primary")
+            if unlock:
+                supplied = supplied.strip()
+                scene_authorized = hmac.compare_digest(supplied.encode(), preview_password.encode())
+                if scene_authorized:
+                    st.session_state["trial_access_confirmed"] = True
+                    st.rerun()
+                elif supplied:
+                    st.error("Пароль не принят. Проверьте тестовый пароль." if ru else
+                             "Password not accepted. Check your trial password.")
+                else:
+                    st.info("Введите тестовый пароль." if ru else "Enter your trial password.")
         if scene_authorized:
-            st.success("Тестовый доступ открыт. Теперь можно создать открытку." if ru else
-                       "Trial access unlocked. You can now create your card.")
-        elif unlock and supplied:
-            st.error("Пароль не подошёл. Проверьте язык клавиатуры и пробелы при копировании. "
-                     "Это тестовый пароль сайта, не пароль от OpenAI."
-                     if ru else
-                     "The password was not accepted. Check your keyboard language and any copied spaces. "
-                     "Use the site's trial password, not your OpenAI password.")
-        elif unlock:
-            st.info("Поле пароля пустое. Введите тестовый пароль выше." if ru else
-                    "The password field is empty. Enter the trial password above.")
-        else:
+            st.success("Пароль принят. Тестовый доступ открыт." if ru else
+                       "Password accepted. Trial access unlocked.")
+        elif not unlock:
             st.info("После ввода пароля нажмите «Подтвердить пароль». Фото и поздравление сохранятся."
                     if ru else "After entering the password, click Confirm password. Your photo and message will stay here.")
     else:
         st.warning("Генерация сцен временно недоступна. Фото и текст можно подготовить, либо выбрать рамку."
                    if ru else "Scene generation is temporarily unavailable. Prepare your photo and text, or choose a frame.")
-if not original:
-    st.caption(t["hint"])
 st.subheader("3. Добавьте поздравление" if ru else "3. Add your greeting")
 gl = st.selectbox(t["greeting_language"], list(L),
                   format_func=lambda value: L[value]["language_name"], key="content_language")
@@ -1452,16 +1480,17 @@ if st.session_state.get("result_signature") != signature:
 
 try:
     if st.session_state.get("photo_digest") != digest:
-        st.session_state.pop("photo_image", None)
+        st.session_state.update(photo_image=load_photo(data), photo_digest=digest)
         st.session_state.pop("check_signature", None)
-        st.session_state["photo_image"] = load_photo(data)
-        st.session_state["photo_digest"] = digest
     photo = st.session_state["photo_image"]
     characters = name + title + message
     if any(ord(character) not in supported_characters() for character in characters if character != "\n"):
         st.error(t["unsupported"])
         st.stop()
     if scene_mode:
+        if gumroad_product and not scene_authorized:
+            st.warning("Активируйте пакет ключом Gumroad." if ru else "Activate your pack with your Gumroad licence key.")
+            st.stop()
         if not scene_available or not scene_authorized:
             st.warning("Фото загружено. Для создания сцены введите тестовый пароль выше."
                        if ru else "Your photo is uploaded. Enter the test password above to create the scene.")
@@ -1469,7 +1498,7 @@ try:
                 st.error("Доступ ещё не подтверждён. Нажмите «Подтвердить пароль» в разделе загрузки фото."
                          if ru else "Access is not confirmed yet. Click Confirm password in the upload section.")
             st.stop()
-        scene_editor(photo, digest, scene, lang, title, message, name, api_key, t)
+        scene_editor(photo, digest, scene, lang, title, message, name, api_key, t, purchase)
         st.stop()
     if original:
         card = render_original(photo, selected, title, message, name, christmas=preset == "christmas")
@@ -1506,8 +1535,19 @@ try:
 except ScenePending:
     watch_scene_request(lang == "ru")
 except PhotoError as error:
-    st.error(t["errors"].get(str(error), "Не удалось подготовить открытку." if lang == "ru"
-                                else "Could not prepare the card."))
+    if str(error) == "pixels":
+        st.error(f"Разрешение выше {MAX_PHOTO_PIXELS // 1_000_000} Мп. Загрузите уменьшенную копию." if ru else
+                 f"The photo exceeds {MAX_PHOTO_PIXELS // 1_000_000} megapixels. Upload a smaller copy.")
+    elif str(error) == "file_size":
+        st.error(f"Файл больше {MAX_UPLOAD_MB} МБ. Загрузите копию меньшего размера." if ru else
+                 f"The file exceeds {MAX_UPLOAD_MB} MB. Upload a smaller copy.")
+    else:
+        st.error(t["errors"].get(str(error), "Не удалось подготовить открытку." if ru else
+                                    "Could not prepare the card."))
+except (LicenseUnavailable, sqlite3.Error):
+    st.session_state.pop("scene_resume", None)
+    st.error("Не удалось проверить доступ к пакету. Попробуйте ещё раз чуть позже." if ru else
+             "We couldn't verify access to your pack. Please try again shortly.")
 except requests.Timeout:
     st.session_state.pop("scene_resume", None)
     st.error("Сервис изображений не ответил вовремя. Фото и текст остались в этой вкладке. "
