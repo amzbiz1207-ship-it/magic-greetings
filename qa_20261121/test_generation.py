@@ -5,9 +5,10 @@ from types import SimpleNamespace
 from concurrent.futures import Future,ThreadPoolExecutor
 from unittest.mock import Mock,patch
 import requests
+import numpy as np
 from PIL import Image,ImageOps
 source=(Path(__file__).resolve().parent.parent / 'app.py').read_text();tree=ast.parse(source)
-ns=globals().copy();ns['st']=SimpleNamespace(session_state={});ns['IDENTITY_RULES']='identity '
+ns=globals().copy();ns['st']=SimpleNamespace(session_state={});ns['IDENTITY_RULES']='identity ';ns['LOGGER']=logging.getLogger(__name__)
 def encode_image(im,fmt):
  b=BytesIO();im.save(b,format=fmt);return b.getvalue()
 ns['encode_image']=encode_image
@@ -22,7 +23,7 @@ class GenerationTests(unittest.TestCase):
   if pool:pool.shutdown(wait=True)
  def response(self,im=None):
   im=im or self.im
-  return SimpleNamespace(ok=True,json=lambda:{'data':[{'b64_json':base64.b64encode(encode_image(im,'PNG')).decode()}]})
+  return SimpleNamespace(ok=True,status_code=200,headers={},json=lambda:{'data':[{'b64_json':base64.b64encode(encode_image(im,'PNG')).decode()}]})
  def call(self,mask=None):return ns['_request_scene'](self.im,mask,'test','fake-test-key')
  def test_01_success_decode(self):
   with patch.object(requests,'post',return_value=self.response()):self.assertEqual(self.call().size,(16,16))
@@ -32,7 +33,7 @@ class GenerationTests(unittest.TestCase):
   with patch.object(requests,'post',return_value=self.response(Image.new('RGB',(32,16)))):
    with self.assertRaises(ValueError):self.call()
  def test_04_bad_payload_rejected(self):
-  with patch.object(requests,'post',return_value=SimpleNamespace(ok=True,json=lambda:{'data':[]})):
+  with patch.object(requests,'post',return_value=SimpleNamespace(ok=True,status_code=200,headers={},json=lambda:{'data':[]})):
    with self.assertRaises(IndexError):self.call()
  def test_05_http_error_propagates(self):
   r=Mock(ok=False,status_code=401,headers={});r.json.return_value={'error':{'code':'invalid_api_key'}};r.raise_for_status.side_effect=requests.HTTPError('401')
