@@ -12,6 +12,8 @@ class ControlledPool:
   return Future()
 if 'scene_executor' not in st.session_state: st.session_state['scene_executor']=ControlledPool()
 photo=Image.new('RGB',(1024,1024),'#bbbbaa')
+def detect_result_faces(image, expected_count):
+ return [(300,180,150,180)] if expected_count == 1 else []
 digest='fixture_ornament_identity_v3'
 if 'scene_digest' not in st.session_state:
  st.session_state.update(scene_digest=digest,scene_source=photo,scene_faces=[(300,180,150,180)],scene_issues=[],scene_saved={},scene_versions=[],scene_confirmed_faces=[],scene_original_faces=[])
@@ -54,3 +56,42 @@ full=AppTest.from_file(str(root/'app.py'),default_timeout=20).run();assert not f
 next(b for b in full.button if b.key=='quick_choose_market').click().run();assert not full.exception,full.exception
 assert len(full.get('file_uploader'))==1
 print('PASS: full landing -> scene selection -> uploader')
+
+# Exercise the real upload and password widgets with local inputs and no API call.
+import io
+import os
+from PIL import Image
+from unittest.mock import patch
+
+with patch.dict(
+    os.environ, {"MAGIC_GREETING_TEST_PASSWORD": "fixture", "OPENAI_API_KEY": "fixture"},
+):
+    preview = AppTest.from_file(str(root / "app.py"), default_timeout=20).run()
+    preview.button(key="quick_choose_fireplace").click().run()
+    uploader = preview.get("file_uploader")[0]
+    uploader.upload("invalid.jpg", b"broken", "image/jpeg").run()
+    next(field for field in preview.text_input if field.label in {"Password for trial generation", "Пароль для пробной генерации"}).set_value(" fixture ")
+    next(button for button in preview.button if str(button.key).startswith("FormSubmitter:trial_access_form")).click().run()
+    assert not preview.exception and preview.error
+    assert preview.session_state["trial_access_confirmed"]
+
+    with Image.open(root / "examples" / "sample_family.png") as source_image:
+        photo = source_image.convert("RGB")
+    photo.thumbnail((800, 800))
+    data = io.BytesIO()
+    photo.save(data, "JPEG")
+    preview.get("file_uploader")[0].upload("family.jpg", data.getvalue(), "image/jpeg").run()
+    assert not preview.exception and not preview.error
+    assert len(preview.checkbox) >= 2, preview.warning
+    count = len(preview.checkbox)
+    assert preview.button(key="scene_prerequisite").disabled
+    next(box for box in preview.selectbox if str(box.key).startswith("scene_people_")).set_value(count - 1).run()
+    assert preview.button(key="scene_prerequisite").disabled
+    assert preview.warning
+    next(box for box in preview.selectbox if str(box.key).startswith("scene_people_")).set_value(count).run()
+    assert not preview.exception
+    assert not any(button.key == "scene_prerequisite" for button in preview.button)
+
+    assert preview.session_state["trial_access_confirmed"]
+    assert all("sleeping face" not in element.value for element in preview.markdown)
+print("PASS: activation with a rejected upload, then a family image under 1000 pixels")
